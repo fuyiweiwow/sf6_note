@@ -1,0 +1,390 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../models/app_data.dart';
+import '../models/move_template.dart';
+import '../models/move_step.dart';
+import '../providers/app_data_provider.dart';
+import '../widgets/direction_button.dart';
+import '../widgets/attack_button.dart';
+import '../widgets/notation_drop_target.dart';
+import '../widgets/template_chip.dart';
+
+class ComboEditorScreen extends ConsumerStatefulWidget {
+  const ComboEditorScreen({
+    super.key,
+    required this.characterId,
+    required this.entryId,
+    required this.comboId,
+  });
+
+  final String characterId;
+  final String entryId;
+  final String comboId;
+
+  @override
+  ConsumerState<ComboEditorScreen> createState() => _ComboEditorScreenState();
+}
+
+class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
+  TextEditingController? _notesController;
+  TextEditingController? _nameController;
+  String _lastSyncedNotes = '';
+  String _lastSyncedName = '';
+  int? _selStart;
+  int? _selEnd;
+  /// Safely find the combo in current state.
+  dynamic _findCombo(AppData data) {
+    for (final c in data.characters) {
+      if (c.id == widget.characterId) {
+        for (final e in c.entries) {
+          for (final co in e.combos) {
+            if (co.id == widget.comboId) return co;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Get the character's templates from current state.
+  List<MoveTemplate> _getTemplates(AppData data) {
+    for (final c in data.characters) {
+      if (c.id == widget.characterId) return c.templates;
+    }
+    return [];
+  }
+
+  /// Sync the notes controller without triggering a loop.
+  void _ensureController(String notes) {
+    if (_notesController == null) {
+      _notesController = TextEditingController(text: notes);
+      _lastSyncedNotes = notes;
+      _notesController!.addListener(_onNotesChanged);
+    } else if (_notesController!.text != notes && _lastSyncedNotes != notes) {
+      _lastSyncedNotes = notes;
+      Future.microtask(() {
+        if (mounted && _notesController != null) {
+          _notesController!.text = notes;
+        }
+      });
+    }
+  }
+
+  void _ensureNameController(String name) {
+    if (_nameController == null) {
+      _nameController = TextEditingController(text: name);
+      _lastSyncedName = name;
+      _nameController!.addListener(_onNameChanged);
+    } else if (_nameController!.text != name && _lastSyncedName != name) {
+      _lastSyncedName = name;
+      Future.microtask(() {
+        if (mounted && _nameController != null) {
+          _nameController!.text = name;
+        }
+      });
+    }
+  }
+
+  void _onNameChanged() {
+    final text = _nameController!.text;
+    if (text != _lastSyncedName) {
+      _lastSyncedName = text;
+      ref.read(appDataProvider.notifier).renameCombo(
+            widget.characterId, widget.entryId, widget.comboId, text);
+    }
+  }
+
+  void _onNotesChanged() {
+    final text = _notesController!.text;
+    if (text != _lastSyncedNotes) {
+      _lastSyncedNotes = text;
+      ref.read(appDataProvider.notifier).updateComboNotes(
+            widget.characterId, widget.entryId, widget.comboId, text);
+    }
+  }
+
+  void _appendStep(MoveStep step) {
+    ref.read(appDataProvider.notifier).appendComboStep(
+          widget.characterId, widget.entryId, widget.comboId, step);
+  }
+
+  void _deleteStep(int index) {
+    ref.read(appDataProvider.notifier).removeComboStep(
+          widget.characterId, widget.entryId, widget.comboId, index);
+  }
+
+  void _reorderStep(int oldIndex, int newIndex) {
+    ref.read(appDataProvider.notifier).reorderComboStep(
+          widget.characterId, widget.entryId, widget.comboId, oldIndex, newIndex);
+  }
+
+  void _clearNotation() {
+    ref.read(appDataProvider.notifier).clearComboNotation(
+          widget.characterId, widget.entryId, widget.comboId);
+  }
+
+  void _onStepTap(int index) {
+    setState(() {
+      if (_selStart == null) {
+        _selStart = index;
+        _selEnd = index;
+      } else {
+        _selStart = _selStart! < index ? _selStart! : index;
+        _selEnd = _selStart! < index ? index : _selStart!;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() { _selStart = null; _selEnd = null; });
+  }
+
+  bool _isStepSelected(int index) {
+    if (_selStart == null) return false;
+    return index >= _selStart! && index <= _selEnd!;
+  }
+
+  void _showSaveTemplateDialog() {
+    if (_selStart == null || _selEnd == null) return;
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('保存为招式模板'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('已选中 ${_selEnd! - _selStart! + 1} 个步骤',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(controller: controller, autofocus: true,
+              decoration: const InputDecoration(labelText: '模板名称', hintText: '例如: 波动拳')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () { _clearSelection(); Navigator.pop(ctx); }, child: const Text('取消')),
+          TextButton(onPressed: () {
+            final name = controller.text.trim();
+            if (name.isNotEmpty) {
+              ref.read(appDataProvider.notifier).saveSelectionAsTemplate(
+                    widget.characterId, widget.entryId, widget.comboId,
+                    _selStart!, _selEnd!, name);
+              _clearSelection();
+            }
+            Navigator.pop(ctx);
+          }, child: const Text('保存')),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _notesController?.removeListener(_onNotesChanged);
+    _notesController?.dispose();
+    _nameController?.removeListener(_onNameChanged);
+    _nameController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = ref.watch(appDataProvider);
+    final result = _findCombo(data);
+
+    if (result == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('编辑招式'), backgroundColor: Colors.grey.shade100, foregroundColor: Colors.grey.shade900),
+        body: Center(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text('找不到招式数据', style: TextStyle(color: Colors.grey.shade500)),
+            const SizedBox(height: 8),
+            Text('请返回上一页重试', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+          ],
+        )),
+      );
+    }
+
+    final combo = result;
+    final notation = combo.notation;
+    _ensureController(combo.notes);
+    _ensureNameController(combo.name);
+    final templates = _getTemplates(data);
+    final hasSelection = _selStart != null;
+    final numpadMode = ref.read(appDataProvider.notifier).numpadMode;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(combo.name.isNotEmpty ? combo.name : '编辑招式'),
+        backgroundColor: Colors.grey.shade100,
+        foregroundColor: Colors.grey.shade900,
+        elevation: 0.5,
+        actions: [
+          if (hasSelection) ...[
+            IconButton(icon: const Icon(Icons.bookmark_add_outlined), tooltip: '保存选区为模板', onPressed: _showSaveTemplateDialog),
+            IconButton(icon: const Icon(Icons.close), tooltip: '取消选区', onPressed: () => _clearSelection()),
+          ],
+          if (notation.isNotEmpty && !hasSelection)
+            IconButton(icon: const Icon(Icons.delete_outline), tooltip: '清空', onPressed: _clearNotation),
+        ],
+      ),
+      backgroundColor: Colors.white,
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      labelText: '招式名称',
+                      hintText: '例如: 基础连段',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Text('招式', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                      const Spacer(),
+                      if (hasSelection)
+                        Text('已选 ${_selEnd! - _selStart! + 1} 步 (点击继续选区)', style: TextStyle(fontSize: 12, color: Colors.purple.shade600))
+                      else
+                        Text('点击步骤选区 → 保存为模板', style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  NotationDropTarget(
+                    notation: notation,
+                    onAppend: _appendStep,
+                    onDelete: _deleteStep,
+                    onReorder: _reorderStep,
+                    onStepTap: _onStepTap,
+                    isStepSelected: _isStepSelected,
+                    numpadMode: numpadMode,
+                  ),
+                  const SizedBox(height: 24),
+                  Text('备注', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _notesController,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      hintText: '输入备注...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade500, width: 1.5)),
+                      filled: true, fillColor: Colors.grey.shade50,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Bottom panel
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              border: Border(top: BorderSide(color: Colors.grey.shade300, width: 1)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  Expanded(child: _buildDirectionPad()),
+                  _divider(),
+                  Expanded(child: _buildAttackPad()),
+                  _divider(),
+                  Expanded(flex: 2, child: _buildTemplateBar(templates)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider() => Container(width: 1, height: 100, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 4));
+
+  Widget _buildDirectionPad() {
+    final numpadMode = ref.read(appDataProvider.notifier).numpadMode;
+    const rows = [
+      [Direction.upBack, Direction.up, Direction.upForward],
+      [Direction.back, null, Direction.forward],
+      [Direction.downBack, Direction.down, Direction.downForward],
+    ];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('方向', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+        const SizedBox(height: 4),
+        ...rows.map((row) => Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: row.map((dir) {
+                if (dir == null) return const SizedBox(width: 42, height: 42);
+                return Padding(padding: const EdgeInsets.all(1), child: DirectionButton(direction: dir, size: 40, numpadMode: numpadMode));
+              }).toList(),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildAttackPad() {
+    const punches = [Attack.lightPunch, Attack.mediumPunch, Attack.heavyPunch];
+    const kicks = [Attack.lightKick, Attack.mediumKick, Attack.heavyKick];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('拳脚', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+        const SizedBox(height: 4),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [for (final a in punches) Padding(padding: const EdgeInsets.all(1), child: AttackButton(attack: a, size: 40))]),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [for (final a in kicks) Padding(padding: const EdgeInsets.all(1), child: AttackButton(attack: a, size: 40))]),
+      ],
+    );
+  }
+
+  Widget _buildTemplateBar(List<MoveTemplate> templates) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('模板', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+        const SizedBox(height: 4),
+        if (templates.isEmpty)
+          Center(child: Text('选区后保存为模板', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)))
+        else
+          Wrap(
+            spacing: 3, runSpacing: 3,
+            children: templates.map((t) => TemplateChip(
+              template: t,
+              onLongPress: () {
+                showDialog(context: context, builder: (ctx) => AlertDialog(
+                  title: Text('删除模板「${t.displayText}」？'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                    TextButton(onPressed: () {
+                      ref.read(appDataProvider.notifier).removeTemplate(widget.characterId, t.id);
+                      Navigator.pop(ctx);
+                    }, child: const Text('删除', style: TextStyle(color: Colors.red))),
+                  ],
+                ));
+              },
+            )).toList(),
+          ),
+      ],
+    );
+  }
+}

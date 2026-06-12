@@ -1,0 +1,24 @@
+name: sf6_note
+description: Street Fighter 6 move notation memory app.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  uuid: ^4.4.0
+  file_picker: ^8.0.0
+  path_provider: ^2.1.3
+  pdf: ^3.11.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

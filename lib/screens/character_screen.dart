@@ -1,0 +1,422 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../models/entry.dart';
+import '../models/move_template.dart';
+import '../providers/app_data_provider.dart';
+import 'combo_list_screen.dart';
+import 'template_editor_screen.dart';
+import '../services/pdf_export_service.dart';
+
+class CharacterScreen extends ConsumerStatefulWidget {
+  const CharacterScreen({
+    super.key,
+    required this.characterId,
+  });
+
+  final String characterId;
+
+  @override
+  ConsumerState<CharacterScreen> createState() => _CharacterScreenState();
+}
+
+class _CharacterScreenState extends ConsumerState<CharacterScreen> {
+  bool _detailMode = false;
+
+  Future<void> _showAddTemplateDialog() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('新建招式模板'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '模板名称',
+            hintText: '例如: 波动拳',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(context, controller.text.trim());
+              }
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name != null) {
+      final notifier = ref.read(appDataProvider.notifier);
+      final tmpl = MoveTemplate(name: name);
+      notifier.addTemplate(widget.characterId, tmpl);
+      final data = ref.read(appDataProvider);
+      final character = data.characters.firstWhere((c) => c.id == widget.characterId);
+      final newTmpl = character.templates.lastWhere((t) => t.name == name);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TemplateEditorScreen(
+              characterId: widget.characterId,
+              templateId: newTmpl.id,
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showAddCustomEntryDialog() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('新建自定义条目'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '条目名称',
+            hintText: '例如: 防守反击连段',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(context, controller.text.trim());
+              }
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name != null) {
+      ref.read(appDataProvider.notifier).addCustomEntry(widget.characterId, name);
+    }
+  }
+
+  void _showDeleteCharacterDialog() {
+    final data = ref.read(appDataProvider);
+    final character = data.characters.firstWhere((c) => c.id == widget.characterId);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除人物'),
+        content: Text('确定要删除「${character.name}」及其所有招式数据吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              ref.read(appDataProvider.notifier).removeCharacter(widget.characterId);
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = ref.watch(appDataProvider);
+    final character = data.characters.firstWhere((c) => c.id == widget.characterId);
+    final templates = character.templates;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(character.name),
+        backgroundColor: Colors.grey.shade100,
+        foregroundColor: Colors.grey.shade900,
+        elevation: 0.5,
+        actions: [
+          // Numpad mode toggle
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: IconButton(
+              icon: Icon(ref.read(appDataProvider.notifier).numpadMode
+                  ? Icons.filter_9_plus
+                  : Icons.arrow_outward),
+              tooltip: ref.read(appDataProvider.notifier).numpadMode
+                  ? '箭头模式'
+                  : '数字模式',
+              onPressed: () =>
+                  ref.read(appDataProvider.notifier).toggleNumpadMode(),
+            ),
+          ),
+          // Detail mode toggle
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: IconButton(
+              icon: Icon(_detailMode ? Icons.visibility_off : Icons.visibility),
+              tooltip: _detailMode ? '普通模式' : '详细模式',
+              onPressed: () => setState(() => _detailMode = !_detailMode),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: '导出PDF',
+            onPressed: () => PdfExportService().exportCharacter(character),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: '删除人物',
+            onPressed: _showDeleteCharacterDialog,
+          ),
+        ],
+      ),
+      backgroundColor: Colors.white,
+      body: Column(
+        children: [
+          // Templates preview bar (always visible)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: Colors.purple.shade50,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text('招式模板 (${templates.length})',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.purple.shade700)),
+                    const Spacer(),
+                    SizedBox(
+                      height: 24,
+                      child: TextButton.icon(
+                        onPressed: () => _showAddTemplateDialog(),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('新建', style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (templates.isEmpty)
+                  Text('暂无模板，点击新建或从连段编辑器保存选区',
+                      style: TextStyle(fontSize: 11, color: Colors.purple.shade400))
+                else
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: templates.map((t) {
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TemplateEditorScreen(
+                                characterId: widget.characterId,
+                                templateId: t.id,
+                              ),
+                            ),
+                          );
+                        },
+                        onLongPress: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: Text('删除模板「${t.displayText}」？'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                                TextButton(
+                                  onPressed: () {
+                                    ref.read(appDataProvider.notifier).removeTemplate(widget.characterId, t.id);
+                                    Navigator.pop(ctx);
+                                  },
+                                  child: const Text('删除', style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.purple.shade300),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                t.name.isNotEmpty ? t.name : t.stepsPreview,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple.shade700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          // Entry list
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: character.entries.length,
+              itemBuilder: (context, index) {
+                final entry = character.entries[index];
+                return _EntryCard(
+                  entry: entry,
+                  detailMode: _detailMode,
+                  numpadMode: ref.read(appDataProvider.notifier).numpadMode,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ComboListScreen(
+                          characterId: widget.characterId,
+                          entryId: entry.id,
+                        ),
+                      ),
+                    );
+                  },
+                  onDelete: entry.type == EntryType.custom
+                      ? () => ref.read(appDataProvider.notifier).removeEntry(widget.characterId, entry.id)
+                      : null,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddCustomEntryDialog,
+        backgroundColor: Colors.grey.shade700,
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _EntryCard extends StatelessWidget {
+  const _EntryCard({
+    required this.entry,
+    required this.onTap,
+    this.onDelete,
+    this.detailMode = false,
+    this.numpadMode = false,
+  });
+
+  final Entry entry;
+  final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final bool detailMode;
+  final bool numpadMode;
+
+  String _allCombosPreview({bool expanded = false}) {
+    if (entry.combos.isEmpty) return '(空)';
+    return entry.combos.map((c) {
+      if (numpadMode && expanded) return c.numpadNotationPreview;
+      if (numpadMode) return c.name.isNotEmpty ? c.name : c.numpadNotationPreview;
+      if (expanded) return c.expandedPreview;
+      return c.preview;
+    }).join(' | ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getBadgeColor(),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  entry.type == EntryType.custom ? '自定义' : _getShortLabel(),
+                  style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(entry.displayName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 8),
+                        Text('${entry.comboCount} 个招式',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _allCombosPreview(expanded: detailMode),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: detailMode ? Colors.purple.shade600 : Colors.grey.shade600,
+                      ),
+                      maxLines: detailMode ? 5 : 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (onDelete != null)
+                IconButton(
+                  icon: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
+                  onPressed: onDelete,
+                ),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getBadgeColor() => switch (entry.type) {
+        EntryType.lightStarter => Colors.blue.shade400,
+        EntryType.mediumStarter => Colors.amber.shade500,
+        EntryType.heavyStarter => Colors.red.shade400,
+        EntryType.okizeme => Colors.orange.shade400,
+        EntryType.punishCounter => Colors.purple.shade400,
+        EntryType.wallCombo => Colors.teal.shade400,
+        EntryType.custom => Colors.grey.shade500,
+      };
+
+  String _getShortLabel() => switch (entry.type) {
+        EntryType.lightStarter => '轻起手',
+        EntryType.mediumStarter => '中起手',
+        EntryType.heavyStarter => '重起手',
+        EntryType.okizeme => '压起身',
+        EntryType.punishCounter => '确反',
+        EntryType.wallCombo => '迸墙',
+        EntryType.custom => '自定义',
+      };
+}
