@@ -14,6 +14,7 @@ class NotationDropTarget extends StatelessWidget {
     this.onStepTap,
     this.isStepSelected,
     this.numpadMode = false,
+    this.enabled = true,
   });
 
   final List<MoveStep> notation;
@@ -23,12 +24,13 @@ class NotationDropTarget extends StatelessWidget {
   final void Function(int index)? onStepTap;
   final bool Function(int index)? isStepSelected;
   final bool numpadMode;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return DragTarget<MoveStep>(
-      onWillAcceptWithDetails: (_) => true,
-      onAcceptWithDetails: (details) => onAppend(details.data),
+      onWillAcceptWithDetails: (_) => enabled,
+      onAcceptWithDetails: enabled ? (details) => onAppend(details.data) : null,
       builder: (context, candidateData, rejectedData) {
         final isHovering = candidateData.isNotEmpty;
 
@@ -55,7 +57,9 @@ class NotationDropTarget extends StatelessWidget {
                       textAlign: TextAlign.center,
                     ),
                   )
-                : Column(
+                : IgnorePointer(
+                    ignoring: !enabled,
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -69,6 +73,7 @@ class NotationDropTarget extends StatelessWidget {
                       const SizedBox(height: 40),
                     ],
                   ),
+                    ),
           ),
         );
       },
@@ -80,11 +85,11 @@ class NotationDropTarget extends StatelessWidget {
     for (int i = 0; i < notation.length; i++) {
       if (i > 0) {
         chips.add(Text(
-          '>',
+          '+',
           style: TextStyle(
-            color: Colors.grey.shade600,
+            color: Colors.grey.shade500,
             fontWeight: FontWeight.bold,
-            fontSize: 14,
+            fontSize: 16,
           ),
         ));
       }

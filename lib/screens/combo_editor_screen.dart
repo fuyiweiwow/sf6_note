@@ -47,6 +47,11 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
     return null;
   }
 
+  bool _isComboLocked() {
+    final combo = _findCombo(ref.read(appDataProvider));
+    return combo != null && (combo as dynamic).locked == true;
+  }
+
   /// Get the character's templates from current state.
   List<MoveTemplate> _getTemplates(AppData data) {
     for (final c in data.characters) {
@@ -182,11 +187,31 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
 
   @override
   void dispose() {
+    // Auto-lock combo after editing
+    _autoLockCombo();
     _notesController?.removeListener(_onNotesChanged);
     _notesController?.dispose();
     _nameController?.removeListener(_onNameChanged);
     _nameController?.dispose();
     super.dispose();
+  }
+
+  void _autoLockCombo() {
+    final data = ref.read(appDataProvider);
+    for (final c in data.characters) {
+      if (c.id == widget.characterId) {
+        for (final e in c.entries) {
+          for (final co in e.combos) {
+            if (co.id == widget.comboId && !co.locked) {
+              ref.read(appDataProvider.notifier).toggleComboLock(
+                    widget.characterId, widget.entryId, widget.comboId,
+                  );
+              return;
+            }
+          }
+        }
+      }
+    }
   }
 
   @override
@@ -217,6 +242,7 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
     final templates = _getTemplates(data);
     final hasSelection = _selStart != null;
     final numpadMode = ref.read(appDataProvider.notifier).numpadMode;
+    final isLocked = _isComboLocked();
 
     return Scaffold(
       appBar: AppBar(
@@ -225,6 +251,15 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
         foregroundColor: Colors.grey.shade900,
         elevation: 0.5,
         actions: [
+          IconButton(
+            icon: Icon(_isComboLocked() ? Icons.lock : Icons.lock_open),
+            tooltip: _isComboLocked() ? '解锁招式' : '锁定招式',
+            onPressed: () {
+              ref.read(appDataProvider.notifier).toggleComboLock(
+                    widget.characterId, widget.entryId, widget.comboId,
+                  );
+            },
+          ),
           if (hasSelection) ...[
             IconButton(icon: const Icon(Icons.bookmark_add_outlined), tooltip: '保存选区为模板', onPressed: _showSaveTemplateDialog),
             IconButton(icon: const Icon(Icons.close), tooltip: '取消选区', onPressed: () => _clearSelection()),
@@ -244,6 +279,7 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
                 children: [
                   TextField(
                     controller: _nameController,
+                    enabled: !isLocked,
                     decoration: InputDecoration(
                       labelText: '招式名称',
                       hintText: '例如: 基础连段',
@@ -273,11 +309,14 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
                     onStepTap: _onStepTap,
                     isStepSelected: _isStepSelected,
                     numpadMode: numpadMode,
+                    enabled: !isLocked,
                   ),
                   const SizedBox(height: 24),
                   Text('备注', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
                   const SizedBox(height: 8),
-                  TextField(
+                  IgnorePointer(
+                    ignoring: isLocked,
+                    child: TextField(
                     controller: _notesController,
                     maxLines: 4,
                     decoration: InputDecoration(
@@ -288,11 +327,13 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
                       filled: true, fillColor: Colors.grey.shade50,
                     ),
                   ),
+                  ),
                 ],
               ),
             ),
           ),
-          // Bottom panel
+          // Bottom panel (hidden when locked)
+          if (!isLocked)
           Container(
             decoration: BoxDecoration(
               color: Colors.grey.shade100,

@@ -12,6 +12,7 @@ class Combo {
     this.name = '',
     List<MoveStep>? notation,
     this.notes = '',
+    this.locked = false,
   })  : id = id ?? _uuid.v4(),
         notation = notation ?? [];
 
@@ -19,13 +20,14 @@ class Combo {
   String name;
   List<MoveStep> notation;
   String notes;
+  bool locked;
 
   /// Short notation text for preview. Shows name if set, else notation.
   String get preview => name.isNotEmpty
       ? name
       : notation.map((s) => s.displayText).join(' > ');
 
-  /// Expanded notation: template steps flattened.
+  /// Expanded notation: grouped slots joined with '+', matching PDF format.
   String get expandedPreview {
     final expanded = <MoveStep>[];
     for (final step in notation) {
@@ -35,7 +37,7 @@ class Combo {
         expanded.add(step);
       }
     }
-    return expanded.map((s) => s.displayText).join(' > ');
+    return groupedNotationPreview(expanded);
   }
 
   /// Numpad notation preview (template steps flattened).
@@ -48,7 +50,7 @@ class Combo {
         expanded.add(step);
       }
     }
-    return numpadPreview(expanded);
+    return groupedNotationPreview(expanded, useNumpad: true);
   }
 
   Map<String, dynamic> toJson() => {
@@ -56,6 +58,7 @@ class Combo {
         'name': name,
         'notation': notation.map((s) => s.toJson()).toList(),
         'notes': notes,
+        'locked': locked,
       };
 
   static Combo fromJson(Map<String, dynamic> json) => Combo(
@@ -66,5 +69,6 @@ class Combo {
                 .toList() ??
             [],
         notes: json['notes'] as String? ?? '',
+        locked: json['locked'] as bool? ?? false,
       );
 }

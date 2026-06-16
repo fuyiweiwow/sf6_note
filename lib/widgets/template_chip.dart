@@ -42,26 +42,14 @@ class TemplateChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: Colors.purple.shade300, width: 1.5),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              template.displayText,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple.shade700,
-              ),
-            ),
-            if (template.stepsPreview.isNotEmpty)
-              Text(
-                template.stepsPreview,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.purple.shade400,
-                ),
-              ),
-          ],
+        child: Text(
+          template.displayText,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: Colors.purple.shade700,
+          ),
+          textAlign: TextAlign.center,
         ),
       ),
     );

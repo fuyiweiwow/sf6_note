@@ -13,6 +13,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+
   Future<void> _showAddCharacterDialog() async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -51,8 +52,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _importData() async {
-    final success =
-        await ref.read(appDataProvider.notifier).importData();
+    final success = await ref.read(appDataProvider.notifier).importData();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -64,8 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _exportData() async {
-    final success =
-        await ref.read(appDataProvider.notifier).exportData();
+    final success = await ref.read(appDataProvider.notifier).exportData();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -113,83 +112,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
       backgroundColor: Colors.white,
-      body: data.characters.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.sports_martial_arts,
-                    size: 80,
-                    color: Colors.grey.shade300,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '还没有人物',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey.shade500,
+      body: Column(
+        children: [
+          Expanded(
+            child: data.characters.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.sports_martial_arts,
+                            size: 80, color: Colors.grey.shade300),
+                        const SizedBox(height: 16),
+                        Text('还没有人物',
+                            style: TextStyle(
+                                fontSize: 18, color: Colors.grey.shade500)),
+                        const SizedBox(height: 8),
+                        Text('点击 + 号添加你的第一个人物',
+                            style: TextStyle(
+                                fontSize: 14, color: Colors.grey.shade400)),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '点击 + 号添加你的第一个人物',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade400,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(8),
-              itemCount: data.characters.length,
-              itemBuilder: (context, index) {
-                final character = data.characters[index];
-                return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    title: Text(
-                      character.name,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    subtitle: Text(
-                      '${character.entries.length} 个条目',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
-                    trailing: const Icon(Icons.chevron_right,
-                        color: Colors.grey),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CharacterScreen(
-                            characterId: character.id,
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(8),
+                    itemCount: data.characters.length,
+                    itemBuilder: (context, index) {
+                      final character = data.characters[index];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
                           ),
+                          title: Text(
+                            character.name,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${character.entries.length} 个条目',
+                            style: TextStyle(
+                                fontSize: 13, color: Colors.grey.shade500),
+                          ),
+                          trailing: const Icon(Icons.chevron_right,
+                              color: Colors.grey),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CharacterScreen(
+                                  characterId: character.id,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       );
                     },
                   ),
-                );
-              },
-            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddCharacterDialog,
         backgroundColor: Colors.grey.shade700,

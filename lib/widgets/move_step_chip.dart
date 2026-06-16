@@ -31,6 +31,7 @@ class MoveStepChip extends StatelessWidget {
         child: _buildChip(opacity: 0.85, isDragging: true),
       ),
       childWhenDragging: _buildChip(opacity: 0.2),
+      onDraggableCanceled: (_, __) => onDelete(),
       child: GestureDetector(
         onTap: onTap ?? onDelete,
         child: _buildChip(),
@@ -52,54 +53,37 @@ class MoveStepChip extends StatelessWidget {
 
   Widget _buildChip({double opacity = 1.0, bool isDragging = false}) {
     final (color, bgColor) = _getColors();
+    final isTemplate = step is MoveStepTemplate;
+
+    final chip = Container(
+      width: isTemplate ? null : 48,
+      height: isTemplate ? null : 48,
+      padding: isTemplate
+          ? const EdgeInsets.symmetric(horizontal: 8, vertical: 6)
+          : null,
+      decoration: BoxDecoration(
+        shape: isTemplate ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: isTemplate ? BorderRadius.circular(6) : null,
+        color: selected ? color.withValues(alpha: 0.15) : bgColor,
+        border: Border.all(
+          color: color,
+          width: selected ? 2.5 : 1.5,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          numpadMode ? step.numpadText : step.displayText,
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
 
     return Opacity(
       opacity: opacity,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.15) : bgColor,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: color,
-            width: selected ? 2.5 : 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.drag_indicator,
-              size: 14,
-              color: color.withValues(alpha: 0.4),
-            ),
-            const SizedBox(width: 4),
-            if (step case MoveStepTemplate tmpl)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(tmpl.displayText,
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color)),
-                  Text(numpadMode ? tmpl.numpadText : tmpl.stepsPreview,
-                      style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.6))),
-                ],
-              )
-            else
-              Text(numpadMode ? step.numpadText : step.displayText,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-            // Delete button (always available, independent of selection tap)
-            if (!isDragging)
-              GestureDetector(
-                onTap: onDelete,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Icon(Icons.close, size: 14, color: color.withValues(alpha: 0.5)),
-                ),
-              ),
-          ],
-        ),
-      ),
+      child: isTemplate
+          ? ConstrainedBox(constraints: const BoxConstraints(maxWidth: 120), child: chip)
+          : chip,
     );
   }
 }

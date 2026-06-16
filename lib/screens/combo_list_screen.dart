@@ -7,7 +7,7 @@ import '../providers/app_data_provider.dart';
 import 'combo_editor_screen.dart';
 
 /// Shows all combos within an entry.
-class ComboListScreen extends ConsumerWidget {
+class ComboListScreen extends ConsumerStatefulWidget {
   const ComboListScreen({
     super.key,
     required this.characterId,
@@ -16,6 +16,13 @@ class ComboListScreen extends ConsumerWidget {
 
   final String characterId;
   final String entryId;
+
+  @override
+  ConsumerState<ComboListScreen> createState() => _ComboListScreenState();
+}
+
+class _ComboListScreenState extends ConsumerState<ComboListScreen> {
+  int _displayMode = 0; // 0=normal, 1=direction, 2=numpad, 3=mixed
 
   Future<void> _showAddComboDialog(BuildContext context, WidgetRef ref) async {
     final controller = TextEditingController();
@@ -42,16 +49,16 @@ class ComboListScreen extends ConsumerWidget {
     );
     controller.dispose();
     if (name != null) {
-      ref.read(appDataProvider.notifier).addCombo(characterId, entryId);
+      ref.read(appDataProvider.notifier).addCombo(widget.characterId, widget.entryId);
       final data = ref.read(appDataProvider);
       for (final c in data.characters) {
-        if (c.id == characterId) {
+        if (c.id == widget.characterId) {
           for (final e in c.entries) {
-            if (e.id == entryId && e.combos.isNotEmpty) {
+            if (e.id == widget.entryId && e.combos.isNotEmpty) {
               final newCombo = e.combos.last;
               if (name.isNotEmpty) {
                 ref.read(appDataProvider.notifier).renameCombo(
-                      characterId, entryId, newCombo.id, name,
+                      widget.characterId, widget.entryId, newCombo.id, name,
                     );
               }
             }
@@ -62,16 +69,17 @@ class ComboListScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     final data = ref.watch(appDataProvider);
 
     // Safe lookup
-    final characterIdx = data.characters.indexWhere((c) => c.id == characterId);
+    final characterIdx = data.characters.indexWhere((c) => c.id == widget.characterId);
     if (characterIdx < 0) {
       return Scaffold(appBar: AppBar(title: const Text('条目')), body: Center(child: Text('人物不存在')));
     }
     final character = data.characters[characterIdx];
-    final entryIdx = character.entries.indexWhere((e) => e.id == entryId);
+    final entryIdx = character.entries.indexWhere((e) => e.id == widget.entryId);
     if (entryIdx < 0) {
       return Scaffold(appBar: AppBar(title: const Text('条目')), body: Center(child: Text('条目不存在')));
     }
@@ -84,12 +92,34 @@ class ComboListScreen extends ConsumerWidget {
         foregroundColor: Colors.grey.shade900,
         elevation: 0.5,
         actions: [
+          // Display mode toggle: cycles normal → direction → numpad → mixed
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: IconButton(
+              icon: Icon(switch (_displayMode) {
+                0 => Icons.visibility_off,
+                1 => Icons.arrow_outward,
+                2 => Icons.filter_9_plus,
+                3 => Icons.view_column,
+                _ => Icons.visibility_off,
+              }),
+              tooltip: switch (_displayMode) {
+                0 => '详细模式: 方向',
+                1 => '详细模式: 数字',
+                2 => '详细模式: 混合',
+                _ => '普通模式',
+              },
+              onPressed: () => setState(() {
+                _displayMode = (_displayMode + 1) % 4;
+              }),
+            ),
+          ),
           if (entry.type == EntryType.custom)
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: '删除条目',
               onPressed: () {
-                ref.read(appDataProvider.notifier).removeEntry(characterId, entryId);
+                ref.read(appDataProvider.notifier).removeEntry(widget.characterId, widget.entryId);
                 Navigator.pop(context);
               },
             ),
@@ -108,22 +138,27 @@ class ComboListScreen extends ConsumerWidget {
                 return _ComboCard(
                   combo: combo,
                   index: index,
-                  numpadMode: ref.read(appDataProvider.notifier).numpadMode,
+                  displayMode: _displayMode,
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => ComboEditorScreen(
-                          characterId: characterId,
-                          entryId: entryId,
+                          characterId: widget.characterId,
+                          entryId: widget.entryId,
                           comboId: combo.id,
                         ),
                       ),
                     );
                   },
-                  onDelete: () => ref
+                  onDelete: combo.locked
+                      ? null
+                      : () => ref
+                          .read(appDataProvider.notifier)
+                          .removeCombo(widget.characterId, widget.entryId, combo.id),
+                  onToggleLock: () => ref
                       .read(appDataProvider.notifier)
-                      .removeCombo(characterId, entryId, combo.id),
+                      .toggleComboLock(widget.characterId, widget.entryId, combo.id),
                 );
               },
             ),
@@ -142,14 +177,16 @@ class _ComboCard extends StatelessWidget {
     required this.index,
     required this.onTap,
     required this.onDelete,
-    this.numpadMode = false,
+    required this.onToggleLock,
+    this.displayMode = 0,
   });
 
   final Combo combo;
   final int index;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
-  final bool numpadMode;
+  final VoidCallback? onTap;
+  final VoidCallback? onDelete;
+  final VoidCallback onToggleLock;
+  final int displayMode;
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +200,7 @@ class _ComboCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
+        onLongPress: combo.locked ? null : onDelete,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -182,13 +220,15 @@ class _ComboCard extends StatelessWidget {
                   children: [
                     if (combo.notation.isNotEmpty)
                       Text(
-                        numpadMode
-                            ? (combo.name.isNotEmpty
-                                ? combo.name
-                                : combo.numpadNotationPreview)
-                            : combo.preview,
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                        switch (displayMode) {
+                          1 => combo.expandedPreview,
+                          2 => combo.numpadNotationPreview,
+                          3 => '${combo.expandedPreview}\n${combo.numpadNotationPreview}',
+                          _ => combo.preview,
+                        },
+                        style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                        maxLines: displayMode > 0 ? 3 : 1,
+                        overflow: TextOverflow.ellipsis),
                     if (combo.notes.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
@@ -200,10 +240,17 @@ class _ComboCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
-                onPressed: onDelete,
-                tooltip: '删除招式',
+                icon: Icon(combo.locked ? Icons.lock : Icons.lock_open,
+                    size: 18, color: combo.locked ? Colors.orange.shade400 : Colors.grey.shade400),
+                onPressed: onToggleLock,
+                tooltip: combo.locked ? '解锁招式' : '锁定招式',
               ),
+              if (!combo.locked)
+                IconButton(
+                  icon: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
+                  onPressed: onDelete,
+                  tooltip: '删除招式',
+                ),
               const Icon(Icons.chevron_right, color: Colors.grey),
             ],
           ),

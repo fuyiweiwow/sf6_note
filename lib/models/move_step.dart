@@ -220,3 +220,50 @@ String numpadPreview(List<MoveStep> notation) {
   }
   return buf.toString();
 }
+
+/// Group steps into slots: consecutive directions + optional trailing attack = one slot.
+/// Templates are always their own slot (expanded to inner steps).
+List<List<MoveStep>> groupNotationSlots(List<MoveStep> steps) {
+  final slots = <List<MoveStep>>[];
+  List<MoveStep>? currentSlot;
+  for (final step in steps) {
+    if (step is MoveStepTemplate) {
+      if (currentSlot != null) {
+        slots.add(currentSlot);
+        currentSlot = null;
+      }
+      slots.add(List.from(step.templateSteps));
+    } else if (step is MoveStepDirection) {
+      currentSlot ??= [];
+      currentSlot.add(step);
+    } else if (step is MoveStepAttack) {
+      currentSlot ??= [];
+      currentSlot.add(step);
+      slots.add(currentSlot);
+      currentSlot = null;
+    }
+  }
+  if (currentSlot != null) slots.add(currentSlot);
+  return slots;
+}
+
+/// Build slot string (no internal connectors).
+/// Merges direction+attack, adds 5 prefix for standalone attacks.
+String buildSlotText(List<MoveStep> steps, bool useNumpad) {
+  final buf = StringBuffer();
+  for (final step in steps) {
+    if (step is MoveStepDirection) {
+      buf.write(useNumpad ? step.direction.numpad.toString() : step.direction.symbol);
+    } else if (step is MoveStepAttack) {
+      final hasDir = buf.isNotEmpty && steps[steps.indexOf(step) - 1] is MoveStepDirection;
+      buf.write(hasDir ? step.attack.label : '5${step.attack.label}');
+    }
+  }
+  return buf.toString();
+}
+
+/// Full notation using grouped slots joined with '+', matching PDF export format.
+String groupedNotationPreview(List<MoveStep> steps, {bool useNumpad = false}) {
+  final slots = groupNotationSlots(steps);
+  return slots.map((slot) => buildSlotText(slot, useNumpad)).join(' + ');
+}

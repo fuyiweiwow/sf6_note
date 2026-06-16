@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/entry.dart';
+import '../models/character.dart';
 import '../models/move_template.dart';
 import '../providers/app_data_provider.dart';
 import 'combo_list_screen.dart';
@@ -21,8 +22,6 @@ class CharacterScreen extends ConsumerStatefulWidget {
 }
 
 class _CharacterScreenState extends ConsumerState<CharacterScreen> {
-  bool _detailMode = false;
-
   Future<void> _showAddTemplateDialog() async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -105,6 +104,45 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
     }
   }
 
+  void _showPdfExportDialog(Character character) {
+    final notifier = ref.read(appDataProvider.notifier);
+    final currentMode = notifier.pdfExportMode;
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('PDF导出设置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            ...PdfNotationMode.values.map((mode) {
+              final label = switch (mode) {
+                PdfNotationMode.direction => '方向模式 (↑↘→LP)',
+                PdfNotationMode.numpad => '数字模式 (236LP)',
+                PdfNotationMode.mixed => '混合模式',
+              };
+              return RadioListTile<PdfNotationMode>(
+                title: Text(label),
+                value: mode,
+                groupValue: currentMode,
+                onChanged: (value) {
+                  if (value != null) {
+                    notifier.setPdfExportMode(value);
+                    Navigator.pop(ctx);
+                    PdfExportService().exportCharacter(character, value);
+                  }
+                },
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showDeleteCharacterDialog() {
     final data = ref.read(appDataProvider);
     final character = data.characters.firstWhere((c) => c.id == widget.characterId);
@@ -141,33 +179,10 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
         foregroundColor: Colors.grey.shade900,
         elevation: 0.5,
         actions: [
-          // Numpad mode toggle
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: IconButton(
-              icon: Icon(ref.read(appDataProvider.notifier).numpadMode
-                  ? Icons.filter_9_plus
-                  : Icons.arrow_outward),
-              tooltip: ref.read(appDataProvider.notifier).numpadMode
-                  ? '箭头模式'
-                  : '数字模式',
-              onPressed: () =>
-                  ref.read(appDataProvider.notifier).toggleNumpadMode(),
-            ),
-          ),
-          // Detail mode toggle
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: IconButton(
-              icon: Icon(_detailMode ? Icons.visibility_off : Icons.visibility),
-              tooltip: _detailMode ? '普通模式' : '详细模式',
-              onPressed: () => setState(() => _detailMode = !_detailMode),
-            ),
-          ),
           IconButton(
             icon: const Icon(Icons.picture_as_pdf),
             tooltip: '导出PDF',
-            onPressed: () => PdfExportService().exportCharacter(character),
+            onPressed: () => _showPdfExportDialog(character),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
@@ -278,8 +293,6 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
                 final entry = character.entries[index];
                 return _EntryCard(
                   entry: entry,
-                  detailMode: _detailMode,
-                  numpadMode: ref.read(appDataProvider.notifier).numpadMode,
                   onTap: () {
                     Navigator.push(
                       context,
@@ -314,25 +327,11 @@ class _EntryCard extends StatelessWidget {
     required this.entry,
     required this.onTap,
     this.onDelete,
-    this.detailMode = false,
-    this.numpadMode = false,
   });
 
   final Entry entry;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
-  final bool detailMode;
-  final bool numpadMode;
-
-  String _allCombosPreview({bool expanded = false}) {
-    if (entry.combos.isEmpty) return '(空)';
-    return entry.combos.map((c) {
-      if (numpadMode && expanded) return c.numpadNotationPreview;
-      if (numpadMode) return c.name.isNotEmpty ? c.name : c.numpadNotationPreview;
-      if (expanded) return c.expandedPreview;
-      return c.preview;
-    }).join(' | ');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -373,16 +372,6 @@ class _EntryCard extends StatelessWidget {
                         Text('${entry.comboCount} 个招式',
                             style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                       ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _allCombosPreview(expanded: detailMode),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: detailMode ? Colors.purple.shade600 : Colors.grey.shade600,
-                      ),
-                      maxLines: detailMode ? 5 : 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

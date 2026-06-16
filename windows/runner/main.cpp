@@ -27,7 +27,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"sf6_note", origin, size)) {
+  if (!window.Create(L"SF6 \x62DB\x5F0F\x7B14\x8BB0", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

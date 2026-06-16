@@ -9,16 +9,27 @@ import '../models/character.dart';
 import '../models/entry.dart';
 import '../models/move_step.dart';
 
+enum PdfNotationMode { direction, numpad, mixed }
+
 class PdfExportService {
-  Future<void> exportCharacter(Character character) async {
+  Future<void> exportCharacter(
+    Character character,
+    PdfNotationMode mode,
+  ) async {
     final font = await _loadChineseFont();
-    final bytes = await _buildCharacterPdf(character, font);
-    await _savePdf(bytes, '${character.name}_notes.pdf');
+    final bytes = await _buildCharacterPdf(character, font, mode);
+    final suffix = switch (mode) {
+      PdfNotationMode.direction => 'direction',
+      PdfNotationMode.numpad => 'numpad',
+      PdfNotationMode.mixed => 'mixed',
+    };
+    await _savePdf(bytes, '${character.name}_notes_$suffix.pdf');
   }
 
   Future<List<int>> _buildCharacterPdf(
     Character character,
     pw.Font font,
+    PdfNotationMode mode,
   ) async {
     final pdf = pw.Document(theme: pw.ThemeData.withFont(base: font));
 
@@ -30,7 +41,7 @@ class PdfExportService {
           pw.Header(level: 0, text: character.name),
           pw.SizedBox(height: 8),
           ...character.entries.expand(
-            (entry) => _buildEntrySection(entry, font),
+            (entry) => _buildEntrySection(entry, font, mode),
           ),
         ],
       ),
@@ -49,7 +60,6 @@ class PdfExportService {
     }
   }
 
-  /// Load a Chinese-capable font from Windows system fonts.
   Future<pw.Font> _loadChineseFont() async {
     const paths = [
       'C:/Windows/Fonts/msyh.ttf',
@@ -67,25 +77,26 @@ class PdfExportService {
     return pw.Font.helvetica();
   }
 
-  /// Build ASCII-only notation string for a combo.
-  /// Templates are flattened. Direction arrows are used; attacks show labels.
-  String _notationToAscii(List<MoveStep> steps) {
-    final buf = StringBuffer();
-    for (int i = 0; i < steps.length; i++) {
-      final step = steps[i];
-      if (i > 0) buf.write(' > ');
-      if (step is MoveStepDirection) {
-        buf.write(step.direction.symbol);
-      } else if (step is MoveStepAttack) {
-        buf.write(step.attack.label);
-      } else if (step is MoveStepTemplate) {
-        buf.write(_notationToAscii(step.templateSteps));
-      }
+  /// Build notation string based on the selected mode.
+  /// Delegates to shared grouping logic from move_step.dart.
+  String _notationToString(List<MoveStep> steps, PdfNotationMode mode) {
+    final slots = groupNotationSlots(steps);
+    final useNumpad = mode == PdfNotationMode.numpad;
+    final joined = slots.map((slot) => buildSlotText(slot, useNumpad)).join(' + ');
+
+    if (mode == PdfNotationMode.mixed) {
+      final dirStr = slots.map((slot) => buildSlotText(slot, false)).join(' + ');
+      final numStr = slots.map((slot) => buildSlotText(slot, true)).join(' + ');
+      return '$dirStr\n$numStr';
     }
-    return buf.toString();
+    return joined;
   }
 
-  List<pw.Widget> _buildEntrySection(Entry entry, pw.Font font) {
+  List<pw.Widget> _buildEntrySection(
+    Entry entry,
+    pw.Font font,
+    PdfNotationMode mode,
+  ) {
     final widgets = <pw.Widget>[
       pw.SizedBox(height: 16),
       pw.Text(
@@ -105,7 +116,6 @@ class PdfExportService {
     } else {
       for (int i = 0; i < entry.combos.length; i++) {
         final combo = entry.combos[i];
-        // Build notation: flatten templates, use ASCII symbols
         final flatSteps = <MoveStep>[];
         for (final step in combo.notation) {
           if (step is MoveStepTemplate) {
@@ -114,7 +124,24 @@ class PdfExportService {
             flatSteps.add(step);
           }
         }
-        final notationText = _notationToAscii(flatSteps);
+        final notationText = _notationToString(flatSteps, mode);
+
+        // Add + separator between combos
+        if (i > 0) {
+          widgets.add(
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(left: 12, top: 4),
+              child: pw.Text(
+                '+',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.orange,
+                ),
+              ),
+            ),
+          );
+        }
 
         widgets.add(
           pw.Padding(

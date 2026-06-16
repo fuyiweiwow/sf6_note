@@ -10,6 +10,7 @@ import '../models/entry.dart';
 import '../models/move_step.dart';
 import '../models/move_template.dart';
 import '../services/file_io_service.dart';
+import '../services/pdf_export_service.dart';
 
 const _uuid = Uuid();
 
@@ -24,6 +25,16 @@ class AppDataNotifier extends StateNotifier<AppData> {
 
   void toggleNumpadMode() {
     numpadMode = !numpadMode;
+  }
+
+  PdfNotationMode get pdfExportMode => state.pdfExportMode;
+
+  void setPdfExportMode(PdfNotationMode mode) {
+    state = AppData(
+      pdfExportMode: mode,
+      characters: state.characters,
+    );
+    _scheduleSave();
   }
 
   Future<void> _init() async {
@@ -87,6 +98,24 @@ class AppDataNotifier extends StateNotifier<AppData> {
       characters: state.characters.map((c) {
         if (c.id == characterId) {
           c.entries = c.entries.where((e) => e.id != entryId).toList();
+        }
+        return c;
+      }).toList(),
+    );
+    _scheduleSave();
+  }
+
+  void toggleComboLock(String characterId, String entryId, String comboId) {
+    state = AppData(
+      characters: state.characters.map((c) {
+        if (c.id == characterId) {
+          for (final e in c.entries) {
+            if (e.id == entryId) {
+              for (final co in e.combos) {
+                if (co.id == comboId) co.locked = !co.locked;
+              }
+            }
+          }
         }
         return c;
       }).toList(),
