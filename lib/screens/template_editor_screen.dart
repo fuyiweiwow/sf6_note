@@ -223,12 +223,49 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: SafeArea(
               top: false,
-              child: Row(
-                children: [
-                  Expanded(child: _buildDirectionPad()),
-                  Container(width: 1, height: 100, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 8)),
-                  Expanded(child: _buildAttackPad()),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth >= 600) {
+                    return Row(
+                      children: [
+                        Expanded(child: _buildDirectionPad()),
+                        Container(width: 1, height: 100, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 8)),
+                        Expanded(child: _buildAttackPad()),
+                      ],
+                    );
+                  }
+                  // Narrow screens: two tab buttons opening popup sheets.
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _padTab(
+                          icon: Icons.explore_outlined,
+                          label: '方向',
+                          onTap: () => _showPadSheet(
+                            title: '方向',
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: Center(child: _buildDirectionPad()),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: _padTab(
+                          icon: Icons.sports_martial_arts,
+                          label: '拳脚',
+                          onTap: () => _showPadSheet(
+                            title: '拳脚',
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: Center(child: _buildAttackPad()),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -289,6 +326,60 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
             );
           }),
       ],
+    );
+  }
+
+  Widget _padTab({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: Colors.grey.shade700),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPadSheet({required String title, required Widget child}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            child,
+          ],
+        ),
+      ),
     );
   }
 

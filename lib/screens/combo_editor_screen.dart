@@ -356,14 +356,25 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: SafeArea(
               top: false,
-              child: Row(
-                children: [
-                  Expanded(child: _buildDirectionPad()),
-                  _divider(),
-                  Expanded(child: _buildAttackPad()),
-                  _divider(),
-                  Expanded(flex: 2, child: _buildTemplateBar(templates)),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Wide screens (desktop/tablet): keep the classic inline
+                  // three-column layout. Narrow screens (phones): show a row
+                  // of three tab buttons that each open a popup sheet, so the
+                  // three areas don't crowd each other.
+                  if (constraints.maxWidth >= 600) {
+                    return Row(
+                      children: [
+                        Expanded(child: _buildDirectionPad()),
+                        _divider(),
+                        Expanded(child: _buildAttackPad()),
+                        _divider(),
+                        Expanded(flex: 2, child: _buildTemplateBar(templates)),
+                      ],
+                    );
+                  }
+                  return _buildNarrowTabs(templates);
+                },
               ),
             ),
           ),
@@ -373,6 +384,108 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
   }
 
   Widget _divider() => Container(width: 1, height: 100, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 4));
+
+  /// Narrow-screen bottom panel: three tab buttons that each open a popup
+  /// sheet, so direction / attack / template areas don't crowd each other.
+  Widget _buildNarrowTabs(List<MoveTemplate> templates) {
+    return Row(
+      children: [
+        Expanded(
+          child: _padTab(
+            icon: Icons.explore_outlined,
+            label: '方向',
+            onTap: () => _showPadSheet(
+              title: '方向',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: _buildDirectionPad()),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _padTab(
+            icon: Icons.sports_martial_arts,
+            label: '拳脚',
+            onTap: () => _showPadSheet(
+              title: '拳脚',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: _buildAttackPad()),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _padTab(
+            icon: Icons.bookmark_outline,
+            label: '模板',
+            onTap: () => _showPadSheet(
+              title: '招式模板',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                child: _buildTemplateBar(templates, expand: true),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _padTab({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: Colors.grey.shade700),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPadSheet({required String title, required Widget child}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildDirectionPad() {
     final numpadMode = ref.read(appDataProvider.notifier).numpadMode;
@@ -411,18 +524,20 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
     );
   }
 
-  Widget _buildTemplateBar(List<MoveTemplate> templates) {
+  Widget _buildTemplateBar(List<MoveTemplate> templates, {bool expand = false}) {
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: expand ? CrossAxisAlignment.center : CrossAxisAlignment.start,
       children: [
-        Text('模板', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
-        const SizedBox(height: 4),
+        if (!expand)
+          Text('模板', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+        if (!expand) const SizedBox(height: 4),
         if (templates.isEmpty)
-          Center(child: Text('选区后保存为模板', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)))
+          Center(child: Text(expand ? '还没有模板，先在招式编辑器里选区保存' : '选区后保存为模板', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)))
         else
           Wrap(
-            spacing: 3, runSpacing: 3,
+            alignment: expand ? WrapAlignment.center : WrapAlignment.start,
+            spacing: 6, runSpacing: 6,
             children: templates.map((t) => TemplateChip(
               template: t,
               onLongPress: () {
