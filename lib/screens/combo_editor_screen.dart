@@ -34,6 +34,8 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
   int? _selStart;
   int? _selEnd;
   int? _selAnchor; // first-tap anchor; null once a range is locked
+  // Narrow-screen bottom panel: which pad is expanded (null = only tab row).
+  int? _activePad;
   /// Safely find the combo in current state.
   dynamic _findCombo(AppData data) {
     for (final c in data.characters) {
@@ -386,106 +388,59 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
   Widget _divider() => Container(width: 1, height: 100, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 4));
 
   /// Narrow-screen bottom panel: three tab buttons that each open a popup
-  /// sheet, so direction / attack / template areas don't crowd each other.
+  /// Narrow-screen bottom panel. Three tab buttons; tapping one expands its
+  /// pad inline (non-modal, so the DragTarget in the editor above still
+  /// receives drops from the buttons here). Tapping the active tab collapses.
   Widget _buildNarrowTabs(List<MoveTemplate> templates) {
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: _padTab(
-            icon: Icons.explore_outlined,
-            label: '方向',
-            onTap: () => _showPadSheet(
-              title: '方向',
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: _buildDirectionPad()),
-              ),
-            ),
-          ),
+        Row(
+          children: [
+            Expanded(child: _padTab(0, Icons.explore_outlined, '方向')),
+            Expanded(child: _padTab(1, Icons.sports_martial_arts, '拳脚')),
+            Expanded(child: _padTab(2, Icons.bookmark_outline, '模板')),
+          ],
         ),
-        Expanded(
-          child: _padTab(
-            icon: Icons.sports_martial_arts,
-            label: '拳脚',
-            onTap: () => _showPadSheet(
-              title: '拳脚',
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: _buildAttackPad()),
-              ),
-            ),
+        if (_activePad != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: switch (_activePad) {
+              0 => Center(child: _buildDirectionPad()),
+              1 => Center(child: _buildAttackPad()),
+              _ => _buildTemplateBar(templates, expand: true),
+            },
           ),
-        ),
-        Expanded(
-          child: _padTab(
-            icon: Icons.bookmark_outline,
-            label: '模板',
-            onTap: () => _showPadSheet(
-              title: '招式模板',
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                child: _buildTemplateBar(templates, expand: true),
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
 
-  Widget _padTab({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _padTab(int index, IconData icon, String label) {
+    final active = _activePad == index;
     return InkWell(
-      onTap: onTap,
+      onTap: () => setState(() => _activePad = active ? null : index),
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: Colors.grey.shade700),
+            Icon(icon, size: 22, color: active ? Colors.purple.shade700 : Colors.grey.shade700),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: active ? Colors.purple.shade700 : Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  void _showPadSheet({required String title, required Widget child}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Row(
-                children: [
-                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildDirectionPad() {
     final numpadMode = ref.read(appDataProvider.notifier).numpadMode;

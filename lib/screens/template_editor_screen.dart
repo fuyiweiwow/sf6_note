@@ -28,6 +28,8 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
   TextEditingController? _notesController;
   String _lastSyncedNotes = '';
   List<MoveStep> _steps = [];
+  // Narrow-screen bottom panel: which pad is expanded (null = only tab row).
+  int? _activePad;
 
   void _syncFromState() {
     final data = ref.read(appDataProvider);
@@ -234,35 +236,25 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                       ],
                     );
                   }
-                  // Narrow screens: two tab buttons opening popup sheets.
-                  return Row(
+                  // Narrow screens: two tab buttons that expand inline
+                  // (non-modal, so drops still reach the editor's DragTarget).
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: _padTab(
-                          icon: Icons.explore_outlined,
-                          label: '方向',
-                          onTap: () => _showPadSheet(
-                            title: '方向',
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              child: Center(child: _buildDirectionPad()),
-                            ),
-                          ),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(child: _padTab(0, Icons.explore_outlined, '方向')),
+                          Expanded(child: _padTab(1, Icons.sports_martial_arts, '拳脚')),
+                        ],
                       ),
-                      Expanded(
-                        child: _padTab(
-                          icon: Icons.sports_martial_arts,
-                          label: '拳脚',
-                          onTap: () => _showPadSheet(
-                            title: '拳脚',
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              child: Center(child: _buildAttackPad()),
-                            ),
-                          ),
+                      if (_activePad != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: switch (_activePad) {
+                            0 => Center(child: _buildDirectionPad()),
+                            _ => Center(child: _buildAttackPad()),
+                          },
                         ),
-                      ),
                     ],
                   );
                 },
@@ -329,54 +321,26 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
     );
   }
 
-  Widget _padTab({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _padTab(int index, IconData icon, String label) {
+    final active = _activePad == index;
     return InkWell(
-      onTap: onTap,
+      onTap: () => setState(() => _activePad = active ? null : index),
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: Colors.grey.shade700),
+            Icon(icon, size: 22, color: active ? Colors.purple.shade700 : Colors.grey.shade700),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showPadSheet({required String title, required Widget child}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Row(
-                children: [
-                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: active ? Colors.purple.shade700 : Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const Divider(height: 1),
-            child,
           ],
         ),
       ),
