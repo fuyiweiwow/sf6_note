@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/combo.dart';
 import '../models/entry.dart';
+import '../models/move_step.dart';
 import '../providers/app_data_provider.dart';
 import 'combo_editor_screen.dart';
 
@@ -130,15 +131,32 @@ class _ComboListScreenState extends ConsumerState<ComboListScreen> {
           ? Center(
               child: Text('还没有招式，点击 + 添加',
                   style: TextStyle(color: Colors.grey.shade400, fontSize: 15)))
-          : ListView.builder(
+          : ReorderableListView.builder(
               padding: const EdgeInsets.all(8),
               itemCount: entry.combos.length,
+              onReorder: (oldIndex, newIndex) {
+                ref
+                    .read(appDataProvider.notifier)
+                    .reorderCombos(widget.characterId, widget.entryId, oldIndex, newIndex);
+              },
+              buildDefaultDragHandles: false,
+              proxyDecorator: (child, index, animation) => AnimatedBuilder(
+                animation: animation,
+                builder: (context, _) => Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.transparent,
+                  child: child,
+                ),
+              ),
               itemBuilder: (context, index) {
                 final combo = entry.combos[index];
                 return _ComboCard(
+                  key: ValueKey(combo.id),
                   combo: combo,
                   index: index,
                   displayMode: _displayMode,
+                  templates: character.templates,
                   onTap: () {
                     Navigator.push(
                       context,
@@ -151,6 +169,11 @@ class _ComboListScreenState extends ConsumerState<ComboListScreen> {
                       ),
                     );
                   },
+                  onDuplicate: combo.locked
+                      ? null
+                      : () => ref
+                          .read(appDataProvider.notifier)
+                          .duplicateCombo(widget.characterId, widget.entryId, combo.id),
                   onDelete: combo.locked
                       ? null
                       : () => ref
@@ -173,11 +196,14 @@ class _ComboListScreenState extends ConsumerState<ComboListScreen> {
 
 class _ComboCard extends StatelessWidget {
   const _ComboCard({
+    super.key,
     required this.combo,
     required this.index,
     required this.onTap,
     required this.onDelete,
     required this.onToggleLock,
+    required this.templates,
+    this.onDuplicate,
     this.displayMode = 0,
   });
 
@@ -185,8 +211,34 @@ class _ComboCard extends StatelessWidget {
   final int index;
   final VoidCallback? onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onDuplicate;
   final VoidCallback onToggleLock;
+  final List templates;
   final int displayMode;
+
+  /// Build Flutter TextSpans for the detailed display modes (1/2/3) honoring
+  /// template colors and attack-strength colors.
+  static List<InlineSpan> _coloredSpansFor(
+      List<MoveStep> notation, List templates, int displayMode) {
+    List<InlineSpan> toSpans(ColoredText ct) => ct.spans
+        .map((s) => TextSpan(
+              text: s.text,
+              style: TextStyle(
+                color: s.color == null ? Colors.black : Color(s.color!),
+              ),
+            ))
+        .toList();
+    switch (displayMode) {
+      case 2:
+        return toSpans(buildColoredNotation(notation, templates, useNumpad: true));
+      case 3:
+        final dir = toSpans(buildColoredNotation(notation, templates, useNumpad: false));
+        final num = toSpans(buildColoredNotation(notation, templates, useNumpad: true));
+        return [...dir, const TextSpan(text: '\n'), ...num];
+      default: // 1
+        return toSpans(buildColoredNotation(notation, templates, useNumpad: false));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -205,6 +257,13 @@ class _ComboCard extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(Icons.drag_indicator, size: 20, color: Colors.grey.shade400),
+                ),
+              ),
               Container(
                 width: 28, height: 28,
                 decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(14)),
@@ -219,16 +278,24 @@ class _ComboCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (combo.notation.isNotEmpty)
-                      Text(
-                        switch (displayMode) {
-                          1 => combo.expandedPreview,
-                          2 => combo.numpadNotationPreview,
-                          3 => '${combo.expandedPreview}\n${combo.numpadNotationPreview}',
-                          _ => combo.preview,
-                        },
-                        style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                        maxLines: displayMode > 0 ? 3 : 1,
-                        overflow: TextOverflow.ellipsis),
+                      displayMode == 0
+                          ? Text(
+                              combo.preview,
+                              style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis)
+                          : RichText(
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              text: TextSpan(
+                                style: TextStyle(fontSize: 14, color: Colors.black),
+                                children: _coloredSpansFor(
+                                  combo.notation,
+                                  templates,
+                                  displayMode,
+                                ),
+                              ),
+                            ),
                     if (combo.notes.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
@@ -245,12 +312,18 @@ class _ComboCard extends StatelessWidget {
                 onPressed: onToggleLock,
                 tooltip: combo.locked ? '解锁招式' : '锁定招式',
               ),
-              if (!combo.locked)
+              if (!combo.locked) ...[
+                IconButton(
+                  icon: Icon(Icons.copy, size: 18, color: Colors.grey.shade400),
+                  onPressed: onDuplicate,
+                  tooltip: '复制招式',
+                ),
                 IconButton(
                   icon: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
                   onPressed: onDelete,
                   tooltip: '删除招式',
                 ),
+              ],
               const Icon(Icons.chevron_right, color: Colors.grey),
             ],
           ),

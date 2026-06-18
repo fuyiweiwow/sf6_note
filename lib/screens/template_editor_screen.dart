@@ -25,6 +25,8 @@ class TemplateEditorScreen extends ConsumerStatefulWidget {
 
 class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
   TextEditingController? _nameController;
+  TextEditingController? _notesController;
+  String _lastSyncedNotes = '';
   List<MoveStep> _steps = [];
 
   void _syncFromState() {
@@ -42,11 +44,36 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
     if (nameChanged && _nameController!.text != tmpl.name) {
       _nameController!.text = tmpl.name;
     }
+    _ensureNotesController(tmpl.notes);
+  }
+
+  void _ensureNotesController(String notes) {
+    if (_notesController == null) {
+      _notesController = TextEditingController(text: notes);
+      _lastSyncedNotes = notes;
+      _notesController!.addListener(_onNotesChanged);
+    } else if (_notesController!.text != notes && _lastSyncedNotes != notes) {
+      _lastSyncedNotes = notes;
+      Future.microtask(() {
+        if (mounted && _notesController != null) {
+          _notesController!.text = notes;
+        }
+      });
+    }
   }
 
   void _onNameChanged() {
     ref.read(appDataProvider.notifier).renameTemplate(
           widget.characterId, widget.templateId, _nameController!.text);
+  }
+
+  void _onNotesChanged() {
+    final text = _notesController!.text;
+    if (text != _lastSyncedNotes) {
+      _lastSyncedNotes = text;
+      ref.read(appDataProvider.notifier).updateTemplateNotes(
+            widget.characterId, widget.templateId, text);
+    }
   }
 
   void _appendStep(MoveStep step) {
@@ -91,6 +118,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
     }
 
     _syncFromState();
+    final tmpl = data.characters[charIdx].templates[tmplIdx];
 
     return Scaffold(
       appBar: AppBar(
@@ -132,6 +160,47 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: tmpl.useNameInPdf,
+                        onChanged: (value) {
+                          if (value != null) {
+                            ref.read(appDataProvider.notifier).setTemplateUseNameInPdf(
+                                  widget.characterId, widget.templateId, value);
+                          }
+                        },
+                      ),
+                      Expanded(
+                        child: Text(
+                          '导出 PDF 时显示模板名而不是具体指令',
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text('备注', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _notesController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: '输入备注（导出 PDF 时显示在括号内末尾 * 之后）...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade500, width: 1.5)),
+                      filled: true, fillColor: Colors.grey.shade50,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('颜色', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                  const SizedBox(height: 4),
+                  Text('导出 PDF 时此模板指令的显示颜色（不选默认黑色）',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                  const SizedBox(height: 8),
+                  _buildColorPicker(tmpl),
                   const SizedBox(height: 16),
                   Text('步骤', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
                   const SizedBox(height: 8),
@@ -168,10 +237,67 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
     );
   }
 
+  static const List<Color> _palette = [
+    Color(0xFF000000), // black (default)
+    Color(0xFFE53935), // red
+    Color(0xFFFB8C00), // orange
+    Color(0xFFFDD835), // yellow
+    Color(0xFF43A047), // green
+    Color(0xFF1E88E5), // blue
+    Color(0xFF8E24AA), // purple
+    Color(0xFF6D4C41), // brown
+  ];
+
+  Widget _buildColorPicker(tmpl) {
+    final selected = tmpl.colorValue == null ? 0xFF000000 : tmpl.colorValue!;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final c in _palette)
+          Builder(builder: (context) {
+            final argb = c.toARGB32();
+            final isSelected = selected == argb;
+            return GestureDetector(
+              onTap: () {
+                final value = argb == 0xFF000000 ? null : argb;
+                ref.read(appDataProvider.notifier).setTemplateColor(
+                      widget.characterId, widget.templateId, value);
+              },
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: c,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isSelected ? Colors.grey.shade800 : Colors.transparent,
+                    width: 3,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isSelected ? Colors.black26 : Colors.transparent,
+                      blurRadius: 4,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: isSelected
+                    ? const Icon(Icons.check, color: Colors.white, size: 18)
+                    : null,
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     _nameController?.removeListener(_onNameChanged);
     _nameController?.dispose();
+    _notesController?.removeListener(_onNotesChanged);
+    _notesController?.dispose();
     super.dispose();
   }
 

@@ -33,6 +33,7 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
   String _lastSyncedName = '';
   int? _selStart;
   int? _selEnd;
+  int? _selAnchor; // first-tap anchor; null once a range is locked
   /// Safely find the combo in current state.
   dynamic _findCombo(AppData data) {
     for (final c in data.characters) {
@@ -131,18 +132,26 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
 
   void _onStepTap(int index) {
     setState(() {
-      if (_selStart == null) {
+      if (_selAnchor == null) {
+        // First tap: set the anchor, selection is just this one step.
+        _selAnchor = index;
         _selStart = index;
         _selEnd = index;
       } else {
-        _selStart = _selStart! < index ? _selStart! : index;
-        _selEnd = _selStart! < index ? index : _selStart!;
+        // Second tap: extend selection between anchor and this step.
+        _selStart = index < _selAnchor! ? index : _selAnchor!;
+        _selEnd = index < _selAnchor! ? _selAnchor! : index;
+        _selAnchor = null; // next tap starts a fresh selection
       }
     });
   }
 
   void _clearSelection() {
-    setState(() { _selStart = null; _selEnd = null; });
+    setState(() {
+      _selStart = null;
+      _selEnd = null;
+      _selAnchor = null;
+    });
   }
 
   bool _isStepSelected(int index) {
@@ -295,9 +304,14 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
                       Text('招式', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
                       const Spacer(),
                       if (hasSelection)
-                        Text('已选 ${_selEnd! - _selStart! + 1} 步 (点击继续选区)', style: TextStyle(fontSize: 12, color: Colors.purple.shade600))
+                        Text(
+                          _selAnchor != null
+                              ? '已选 1 步，再点击另一端确定范围'
+                              : '已选 ${_selEnd! - _selStart! + 1} 步，点右上角保存为模板',
+                          style: TextStyle(fontSize: 12, color: Colors.purple.shade600, fontWeight: FontWeight.w600),
+                        )
                       else
-                        Text('点击步骤选区 → 保存为模板', style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+                        Text('点两个步骤选区 → 右上角保存为模板', style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
                     ],
                   ),
                   const SizedBox(height: 8),

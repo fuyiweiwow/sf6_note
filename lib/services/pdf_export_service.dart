@@ -32,20 +32,20 @@ class PdfExportService {
     PdfNotationMode mode,
   ) async {
     final pdf = pw.Document(theme: pw.ThemeData.withFont(base: font));
+    final theme = pw.ThemeData.withFont(base: font);
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(40),
-        build: (context) => [
-          pw.Header(level: 0, text: character.name),
-          pw.SizedBox(height: 8),
-          ...character.entries.expand(
-            (entry) => _buildEntrySection(entry, font, mode),
-          ),
-        ],
-      ),
-    );
+    // --- One MultiPage per entry; each starts on a new page and registers a
+    //     reader-recognized outline bookmark (PDF navigation tree) via pw.Outline.
+    for (final entry in character.entries) {
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          theme: theme,
+          build: (context) => _buildEntrySection(entry, character, font, mode),
+        ),
+      );
+    }
 
     return pdf.save();
   }
@@ -77,114 +77,162 @@ class PdfExportService {
     return pw.Font.helvetica();
   }
 
-  /// Build notation string based on the selected mode.
-  /// Delegates to shared grouping logic from move_step.dart.
-  String _notationToString(List<MoveStep> steps, PdfNotationMode mode) {
-    final slots = groupNotationSlots(steps);
-    final useNumpad = mode == PdfNotationMode.numpad;
-    final joined = slots.map((slot) => buildSlotText(slot, useNumpad)).join(' + ');
-
-    if (mode == PdfNotationMode.mixed) {
-      final dirStr = slots.map((slot) => buildSlotText(slot, false)).join(' + ');
-      final numStr = slots.map((slot) => buildSlotText(slot, true)).join(' + ');
-      return '$dirStr\n$numStr';
-    }
-    return joined;
-  }
-
+  /// Render one combo's notation as colored [pw.InlineSpan] list.
+  /// A single notation mode returns one line; mixed mode returns two lines
+  /// joined by a newline (the caller splits these into separate widgets).
   List<pw.Widget> _buildEntrySection(
     Entry entry,
+    Character character,
     pw.Font font,
     PdfNotationMode mode,
   ) {
-    final widgets = <pw.Widget>[
-      pw.SizedBox(height: 16),
-      pw.Text(
-        entry.displayName,
-        style: pw.TextStyle(
-          fontSize: 16,
-          fontWeight: pw.FontWeight.bold,
-          font: font,
+    final widgets = <pw.Widget>[];
+
+    // Entry name: prominent heading, wrapped in a reader outline bookmark
+    // (level 0). The name is also a named anchor for cross-page linking.
+    widgets.add(
+      pw.Outline(
+        name: 'entry-${entry.id}',
+        title: entry.displayName,
+        level: 0,
+        child: pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: const pw.BoxDecoration(
+            color: PdfColors.grey200,
+            borderRadius: pw.BorderRadius.all(pw.Radius.circular(4)),
+          ),
+          child: pw.Text(
+            entry.displayName,
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, font: font),
+          ),
         ),
       ),
-    ];
+    );
+    // Large gap between the entry title and its content.
+    widgets.add(pw.SizedBox(height: 42));
 
     if (entry.combos.isEmpty) {
       widgets.add(
-        pw.Text('(empty)', style: const pw.TextStyle(fontSize: 12)),
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(left: 8, top: 4),
+          child: pw.Text('（暂无招式）', style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600, font: font)),
+        ),
       );
     } else {
       for (int i = 0; i < entry.combos.length; i++) {
         final combo = entry.combos[i];
-        final flatSteps = <MoveStep>[];
-        for (final step in combo.notation) {
-          if (step is MoveStepTemplate) {
-            flatSteps.addAll(step.templateSteps);
-          } else {
-            flatSteps.add(step);
-          }
-        }
-        final notationText = _notationToString(flatSteps, mode);
+        final comboBlock = <pw.Widget>[];
 
-        // Add + separator between combos
-        if (i > 0) {
-          widgets.add(
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(left: 12, top: 4),
-              child: pw.Text(
-                '+',
-                style: pw.TextStyle(
-                  fontSize: 14,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.orange,
+        // Combo name as a sub-outline (level 1) when set.
+        if (combo.name.isNotEmpty) {
+          comboBlock.add(
+            pw.Outline(
+              name: 'combo-${combo.id}',
+              title: combo.name,
+              level: 1,
+              child: pw.Padding(
+                padding: const pw.EdgeInsets.only(left: 4, bottom: 10),
+                child: pw.Text(
+                  '${i + 1}. ${combo.name}',
+                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, font: font),
                 ),
               ),
             ),
           );
         }
 
+        // Notation line(s). For mixed mode render the two notation forms as
+        // separate RichText widgets with a comfortable gap between them.
+        if (combo.notation.isNotEmpty) {
+          if (mode == PdfNotationMode.mixed) {
+            comboBlock.add(_notationLine(
+              buildColoredNotation(combo.notation, character.templates, useNumpad: false),
+              combo.name.isNotEmpty,
+              combo.name.isEmpty ? '${i + 1}. ' : null,
+              font,
+            ));
+            comboBlock.add(pw.SizedBox(height: 10));
+            comboBlock.add(_notationLine(
+              buildColoredNotation(combo.notation, character.templates, useNumpad: true),
+              combo.name.isNotEmpty,
+              null,
+              font,
+            ));
+          } else {
+            final colored = buildColoredNotation(
+              combo.notation,
+              character.templates,
+              useNumpad: mode == PdfNotationMode.numpad,
+            );
+            comboBlock.add(_notationLine(
+              colored,
+              combo.name.isNotEmpty,
+              combo.name.isEmpty ? '${i + 1}. ' : null,
+              font,
+            ));
+          }
+        }
+
+        // Combo's own remark: larger font, with breathing room above it.
+        if (combo.notes.isNotEmpty) {
+          comboBlock.add(pw.SizedBox(height: 8));
+          comboBlock.add(
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(left: 28),
+              child: pw.Text(
+                combo.notes,
+                style: pw.TextStyle(fontSize: 13, color: PdfColors.grey700, font: font),
+              ),
+            ),
+          );
+        }
+
+        // Stack this combo's pieces together, with generous spacing between
+        // consecutive combos.
         widgets.add(
           pw.Padding(
-            padding: const pw.EdgeInsets.only(left: 12, top: 6),
-            child: pw.Row(
+            padding: pw.EdgeInsets.only(top: i == 0 ? 0 : 18, bottom: 6),
+            child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  '${i + 1}. ',
-                  style: pw.TextStyle(
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.Expanded(
-                  child: pw.Text(
-                    notationText,
-                    style: const pw.TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
+              children: comboBlock,
             ),
           ),
         );
-
-        if (combo.notes.isNotEmpty) {
-          widgets.add(
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(left: 28, top: 2),
-              child: pw.Text(
-                combo.notes,
-                style: pw.TextStyle(
-                  fontSize: 11,
-                  color: PdfColors.grey600,
-                  font: font,
-                ),
-              ),
-            ),
-          );
-        }
       }
     }
 
     return widgets;
+  }
+
+  /// Build one colored notation line (with optional inline index prefix).
+  pw.Widget _notationLine(
+    ColoredText colored,
+    bool hasName,
+    String? indexPrefix,
+    pw.Font font,
+  ) {
+    final children = <pw.InlineSpan>[
+      if (indexPrefix != null)
+        pw.TextSpan(
+          text: indexPrefix,
+          style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+        ),
+      ...colored.spans.map((s) => pw.TextSpan(
+            text: s.text,
+            style: pw.TextStyle(
+              color: s.color == null ? PdfColors.black : PdfColor.fromInt(s.color!),
+            ),
+          )),
+    ];
+    return pw.Padding(
+      padding: pw.EdgeInsets.only(left: hasName ? 16 : 8),
+      child: pw.RichText(
+        text: pw.TextSpan(
+          children: children,
+          style: pw.TextStyle(fontSize: 13, font: font),
+        ),
+      ),
+    );
   }
 }

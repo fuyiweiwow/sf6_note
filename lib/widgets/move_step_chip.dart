@@ -55,7 +55,7 @@ class MoveStepChip extends StatelessWidget {
     final (color, bgColor) = _getColors();
     final isTemplate = step is MoveStepTemplate;
 
-    final chip = Container(
+    final inner = Container(
       width: isTemplate ? null : 48,
       height: isTemplate ? null : 48,
       padding: isTemplate
@@ -64,11 +64,8 @@ class MoveStepChip extends StatelessWidget {
       decoration: BoxDecoration(
         shape: isTemplate ? BoxShape.rectangle : BoxShape.circle,
         borderRadius: isTemplate ? BorderRadius.circular(6) : null,
-        color: selected ? color.withValues(alpha: 0.15) : bgColor,
-        border: Border.all(
-          color: color,
-          width: selected ? 2.5 : 1.5,
-        ),
+        color: selected ? color.withValues(alpha: 0.25) : bgColor,
+        border: Border.all(color: color, width: 1.5),
       ),
       child: Center(
         child: Text(
@@ -78,6 +75,23 @@ class MoveStepChip extends StatelessWidget {
         ),
       ),
     );
+
+    // Wrap selected chips in a clear purple ring so the selection is obvious
+    // regardless of the chip's own color.
+    final chip = selected
+        ? Container(
+            decoration: BoxDecoration(
+              shape: isTemplate ? BoxShape.rectangle : BoxShape.circle,
+              borderRadius: isTemplate ? BorderRadius.circular(8) : null,
+              border: Border.all(color: Colors.purple, width: 3),
+              boxShadow: const [
+                BoxShadow(color: Colors.purple, blurRadius: 6, spreadRadius: 1),
+              ],
+            ),
+            padding: const EdgeInsets.all(2),
+            child: inner,
+          )
+        : inner;
 
     return Opacity(
       opacity: opacity,

@@ -106,7 +106,6 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
 
   void _showPdfExportDialog(Character character) {
     final notifier = ref.read(appDataProvider.notifier);
-    final currentMode = notifier.pdfExportMode;
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -115,7 +114,7 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('PDF导出设置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: Text('选择 PDF 导出模式', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
             ...PdfNotationMode.values.map((mode) {
               final label = switch (mode) {
@@ -123,10 +122,13 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
                 PdfNotationMode.numpad => '数字模式 (236LP)',
                 PdfNotationMode.mixed => '混合模式',
               };
+              // groupValue is intentionally null: no default selection, so
+              // tapping any option always fires onChanged (and exports),
+              // even the one matching the last-used mode.
               return RadioListTile<PdfNotationMode>(
                 title: Text(label),
                 value: mode,
-                groupValue: currentMode,
+                groupValue: null,
                 onChanged: (value) {
                   if (value != null) {
                     notifier.setPdfExportMode(value);
@@ -271,6 +273,17 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                margin: const EdgeInsets.only(right: 5),
+                                decoration: BoxDecoration(
+                                  color: t.colorValue == null
+                                      ? Colors.black
+                                      : Color(t.colorValue!),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
                               Text(
                                 t.name.isNotEmpty ? t.name : t.stepsPreview,
                                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple.shade700),
@@ -286,13 +299,30 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
             ),
           // Entry list
           Expanded(
-            child: ListView.builder(
+            child: ReorderableListView.builder(
               padding: const EdgeInsets.all(8),
               itemCount: character.entries.length,
+              onReorder: (oldIndex, newIndex) {
+                ref
+                    .read(appDataProvider.notifier)
+                    .reorderEntries(widget.characterId, oldIndex, newIndex);
+              },
+              buildDefaultDragHandles: false,
+              proxyDecorator: (child, index, animation) => AnimatedBuilder(
+                animation: animation,
+                builder: (context, _) => Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.transparent,
+                  child: child,
+                ),
+              ),
               itemBuilder: (context, index) {
                 final entry = character.entries[index];
                 return _EntryCard(
+                  key: ValueKey(entry.id),
                   entry: entry,
+                  index: index,
                   onTap: () {
                     Navigator.push(
                       context,
@@ -324,12 +354,15 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
 
 class _EntryCard extends StatelessWidget {
   const _EntryCard({
+    super.key,
     required this.entry,
+    required this.index,
     required this.onTap,
     this.onDelete,
   });
 
   final Entry entry;
+  final int index;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
 
@@ -349,6 +382,13 @@ class _EntryCard extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(Icons.drag_indicator, size: 20, color: Colors.grey.shade400),
+                ),
+              ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(

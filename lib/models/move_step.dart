@@ -247,6 +247,45 @@ List<List<MoveStep>> groupNotationSlots(List<MoveStep> steps) {
   return slots;
 }
 
+/// A segment of a combo for PDF rendering. Either a template reference
+/// (kept whole so its name/notes can be applied) or a run of plain steps.
+class NotationSegment {
+  NotationSegment({this.template, this.steps});
+  final MoveStepTemplate? template;
+  final List<MoveStep>? steps;
+  bool get isTemplate => template != null;
+}
+
+/// Split a combo's notation into segments: each MoveStepTemplate is its own
+/// segment (preserved, not expanded), and the rest are grouped by the same
+/// rule as [groupNotationSlots] (consecutive directions + optional attack).
+List<NotationSegment> splitNotationSegments(List<MoveStep> steps) {
+  final segments = <NotationSegment>[];
+  List<MoveStep>? current;
+  void flush() {
+    if (current != null) {
+      segments.add(NotationSegment(steps: current));
+      current = null;
+    }
+  }
+
+  for (final step in steps) {
+    if (step is MoveStepTemplate) {
+      flush();
+      segments.add(NotationSegment(template: step));
+    } else if (step is MoveStepDirection) {
+      current ??= [];
+      current!.add(step);
+    } else if (step is MoveStepAttack) {
+      current ??= [];
+      current!.add(step);
+      flush();
+    }
+  }
+  flush();
+  return segments;
+}
+
 /// Build slot string (no internal connectors).
 /// Merges direction+attack, adds 5 prefix for standalone attacks.
 String buildSlotText(List<MoveStep> steps, bool useNumpad) {
@@ -266,4 +305,172 @@ String buildSlotText(List<MoveStep> steps, bool useNumpad) {
 String groupedNotationPreview(List<MoveStep> steps, {bool useNumpad = false}) {
   final slots = groupNotationSlots(steps);
   return slots.map((slot) => buildSlotText(slot, useNumpad)).join(' + ');
+}
+
+/// Build notation text honoring template boundaries. Each MoveStepTemplate
+/// becomes a parenthesized segment, optionally showing its name (if the
+/// referenced [MoveTemplate] has [MoveTemplate.useNameInPdf]) and its remark
+/// (`* notes`, if [MoveTemplate.notes] is non-empty). Non-template steps are
+/// grouped as usual. Segments are joined with ' + '.
+///
+/// [templates] is the owning character's template list, used to look up the
+/// live `useNameInPdf` / `notes`. Templates missing from [templates] fall back
+/// to plain expansion with no name/notes.
+String buildNotationWithTemplates(
+  List<MoveStep> notation,
+  List templates, {
+  bool useNumpad = false,
+}) {
+  final segments = splitNotationSegments(notation);
+  final parts = <String>[];
+  for (final seg in segments) {
+    if (seg.isTemplate) {
+      final tpl = seg.template!;
+      // Look up the live template by id (carries useNameInPdf + notes).
+      dynamic live;
+      for (final t in templates) {
+        if (t.id == tpl.templateId) {
+          live = t;
+          break;
+        }
+      }
+      final useName = live != null && live.useNameInPdf == true && live.name.isNotEmpty;
+      final notes = live != null ? (live.notes as String? ?? '') : '';
+      String body;
+      if (useName) {
+        body = live.name as String;
+      } else {
+        body = groupedNotationPreview(tpl.templateSteps, useNumpad: useNumpad);
+      }
+      parts.add(notes.isNotEmpty ? '($body* $notes)' : '($body)');
+    } else {
+      parts.add(groupedNotationPreview(seg.steps!, useNumpad: useNumpad));
+    }
+  }
+  return parts.join(' + ');
+}
+
+/// A colored text fragment. [color] is an ARGB int (0xAARRGGBB).
+/// Used as a UI/PDF-agnostic intermediate representation so colored notation
+/// can be rendered into both Flutter TextSpans and pdf TextSpans.
+class ColoredTextSpan {
+  const ColoredTextSpan(this.text, {this.color});
+  final String text;
+  final int? color;
+}
+
+/// A sequence of colored text spans representing one combo's notation.
+class ColoredText {
+  const ColoredText(this.spans);
+  final List<ColoredTextSpan> spans;
+
+  /// Flatten to a single plain string (drops colors).
+  String get plain => spans.map((s) => s.text).join();
+
+  bool get isEmpty => spans.isEmpty;
+}
+
+/// ARGB color ints for attack strength, matching the in-app AttackButton scheme.
+int _attackColor(Attack a) {
+  if (a.isLight) return 0xFF1976D2; // blue
+  if (a.isMedium) return 0xFFF57F17; // amber
+  return 0xFFC62828; // red (heavy)
+}
+
+/// Build colored notation honoring template boundaries.
+///
+/// Color rules:
+/// - Direction characters → default (null = black).
+/// - Attack labels → light=blue / medium=amber / heavy=red (always, even when
+///   shown as detailed instructions inside a template that has its own color).
+/// - Template segment shown as its **name** (useNameInPdf) → the whole segment
+///   (including parentheses, name, and `* notes`) uses the template's color.
+/// - Template segment shown as **detailed instructions** → template color is
+///   ignored; attacks within keep their own strength colors.
+/// - Connectors (` + `, `(`, `)`, `*`) → default black.
+///
+/// [templates] is the owning character's template list (dynamic to avoid an
+/// import cycle with move_template.dart). Returns a [ColoredText] with one
+/// span per colored run.
+ColoredText buildColoredNotation(
+  List<MoveStep> notation,
+  List templates, {
+  bool useNumpad = false,
+}) {
+  final segments = splitNotationSegments(notation);
+  final out = <ColoredTextSpan>[];
+  void emit(String text, int? color) {
+    if (text.isEmpty) return;
+    if (out.isNotEmpty && out.last.color == color) {
+      out[out.length - 1] = ColoredTextSpan(out.last.text + text, color: color);
+    } else {
+      out.add(ColoredTextSpan(text, color: color));
+    }
+  }
+
+  for (int si = 0; si < segments.length; si++) {
+    final seg = segments[si];
+    if (si > 0) emit(' + ', null);
+
+    if (seg.isTemplate) {
+      final tpl = seg.template!;
+      dynamic live;
+      for (final t in templates) {
+        if (t.id == tpl.templateId) {
+          live = t;
+          break;
+        }
+      }
+      final useName = live != null && live.useNameInPdf == true && live.name.isNotEmpty;
+      final notes = live != null ? (live.notes as String? ?? '') : '';
+      final tplColor = live != null ? live.colorValue as int? : null;
+
+      if (useName) {
+        // Whole segment colored with the template's color (incl. parens/notes).
+        final notesSuffix = notes.isNotEmpty ? '* $notes' : '';
+        emit('(${live.name}$notesSuffix)', tplColor);
+      } else {
+        // Detailed instructions: ignore template color; attacks keep their own.
+        emit('(', null);
+        _emitColoredSteps(tpl.templateSteps, useNumpad, emit);
+        if (notes.isNotEmpty) emit('* $notes', null);
+        emit(')', null);
+      }
+    } else {
+      _emitColoredSteps(seg.steps!, useNumpad, emit);
+    }
+  }
+  return ColoredText(out);
+}
+
+/// Emit a run of plain steps as colored spans (attacks colored by strength).
+void _emitColoredSteps(
+  List<MoveStep> steps,
+  bool useNumpad,
+  void Function(String, int?) emit,
+) {
+  final slots = groupNotationSlots(steps);
+  for (int i = 0; i < slots.length; i++) {
+    if (i > 0) emit(' + ', null);
+    final slot = slots[i];
+    for (final step in slot) {
+      if (step is MoveStepDirection) {
+        emit(
+          useNumpad ? step.direction.numpad.toString() : step.direction.symbol,
+          null,
+        );
+      } else if (step is MoveStepAttack) {
+        // Determine whether this attack was merged with a preceding direction.
+        final merged = slot.indexOf(step) > 0 && slot[slot.indexOf(step) - 1] is MoveStepDirection;
+        if (merged) {
+          // No "5" prefix — the whole label takes the attack color.
+          emit(step.attack.label, _attackColor(step.attack));
+        } else {
+          // Standalone attack: "5" prefix stays black, only the label is colored.
+          emit('5', null);
+          emit(step.attack.label, _attackColor(step.attack));
+        }
+      }
+    }
+  }
 }

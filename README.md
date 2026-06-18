@@ -1,16 +1,81 @@
-# sf6_note
+# SF6 招式笔记 (sf6_note)
 
-A new Flutter project.
+一个用于记录、整理、导出 Street Fighter 6（以及同类格斗游戏）连段/招式的桌面笔记应用。
+支持可视化方向+拳脚拖拽编排、招式模板复用、条目分类管理，并能导出带书签目录与彩色指令的 PDF。
 
-## Getting Started
+## 功能概览
 
-This project is a starting point for a Flutter application.
+### 数据结构
+- **人物 (Character)** → **条目/招式分类 (Entry)** → **招式 (Combo)** → **步骤 (MoveStep)**
+- 步骤类型：方向 (Direction)、拳脚 (Attack)、模板引用 (MoveStepTemplate)
+- 招式模板 (MoveTemplate)：可复用的步骤组合，每个角色独立维护
 
-A few resources to get you started if this is your first Flutter project:
+### 招式编辑
+- 把方向/拳脚按钮**拖拽**到编辑区组合指令
+- 步骤**长按拖动**排序、**拖出编辑区**删除
+- 招式可**命名**、加**备注**、**锁定**防误改
+- 招式列表内可**拖拽排序**、**复制**（生成相邻副本便于微调）
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### 招式模板
+- **新建/编辑/删除**模板
+- 编辑页可设置：
+  - **颜色**（调色板 8 色，不选默认黑色）
+  - **备注**（PDF 中显示在括号内末尾 `*` 之后）
+  - **「导出 PDF 时显示模板名而不是具体指令」**勾选框
+- **保存选区为模板**：招式编辑器中先点一个步骤（起点，紫色高亮），再点另一端（终点）确定选区，右上角书签图标保存
+- 角色页模板 chip 带颜色圆点，长按可删除
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### 条目管理
+- 内置 6 类：轻/中/重起手、压起身、确反、迸墙；可新建自定义条目
+- 条目间**长按拖拽手柄**排序
+- 每个条目可含多个招式
+
+### PDF 导出
+- 三种指令模式：**方向** (↓↘→LP) / **数字** (236LP) / **混合**（两行并列）
+- **自带书签目录**：阅读器（Edge / Chrome / Adobe 等）左侧大纲面板可看到条目与招式，点击跳转
+- **每个招式分类从新页开始**
+- **彩色指令**：
+  - 拳脚按力度上色：轻=蓝、中=琥珀、重=红
+  - 独立拳脚的数字 `5` 前缀保持黑色
+  - 模板勾选"显示名字"时，整段（含括号与备注）用模板自定义颜色
+  - 显示详细指令时模板颜色不生效，仅拳脚按力度上色
+- 模板备注在勾选显示名字时显示为 `(模板名* 备注)`
+
+### 数据管理
+- 本地自动保存（防抖 500ms）
+- Windows 数据位置：`%USERPROFILE%\Documents\sf6_data.json`
+- 支持导入/导出 JSON 备份
+- 旧版数据向后兼容（新增字段缺省即默认值）
+
+## 构建
+
+详见 [BUILD_GUIDE.md](BUILD_GUIDE.md)。简要：
+
+```bash
+flutter pub get
+flutter build windows --release
+# 产物：build/windows/x64/runner/Release/sf6_note.exe
+```
+
+> 分发时需把整个 `Release\` 目录一起拷贝（含 DLL 与资源），单 exe 无法运行。
+
+## 技术栈
+
+- Flutter + Riverpod（状态管理）
+- `pdf` 包生成 PDF（含 Outline 书签）
+- `path_provider` 本地存储
+- `file_picker` 导入/导出与 PDF 保存
+- `uuid` 生成实体 ID
+
+## 项目结构
+
+```
+lib/
+├── models/          # 数据模型 (character, entry, combo, move_step, move_template, app_data)
+├── providers/       # Riverpod 状态管理 (app_data_provider)
+├── services/        # PDF 导出、文件 IO
+├── screens/         # 各页面 (home, character, combo_list, combo_editor, template_editor, help)
+└── widgets/         # 复用组件 (按钮、chip、拖拽目标)
+```
+
+设计文档见上级目录 [DESIGN.md](../DESIGN.md)。

@@ -105,6 +105,24 @@ class AppDataNotifier extends StateNotifier<AppData> {
     _scheduleSave();
   }
 
+  /// Reorder entries within a character.
+  void reorderEntries(
+      String characterId, int oldIndex, int newIndex) {
+    state = AppData(
+      characters: state.characters.map((c) {
+        if (c.id == characterId) {
+          final entries = List<Entry>.from(c.entries);
+          if (oldIndex < newIndex) newIndex -= 1;
+          final entry = entries.removeAt(oldIndex);
+          entries.insert(newIndex, entry);
+          c.entries = entries;
+        }
+        return c;
+      }).toList(),
+    );
+    _scheduleSave();
+  }
+
   void toggleComboLock(String characterId, String entryId, String comboId) {
     state = AppData(
       characters: state.characters.map((c) {
@@ -155,6 +173,72 @@ class AppDataNotifier extends StateNotifier<AppData> {
       }).toList(),
     );
     _scheduleSave();
+  }
+
+  /// Duplicate a combo, inserting the copy right after the original.
+  void duplicateCombo(String characterId, String entryId, String comboId) {
+    state = AppData(
+      characters: state.characters.map((c) {
+        if (c.id == characterId) {
+          for (final e in c.entries) {
+            if (e.id == entryId) {
+              final idx = e.combos.indexWhere((co) => co.id == comboId);
+              if (idx >= 0) {
+                final src = e.combos[idx];
+                final copy = Combo(
+                  name: src.name,
+                  notation: src.notation.map((s) => _cloneStep(s)).toList(),
+                  notes: src.notes,
+                  locked: false,
+                );
+                e.combos = List<Combo>.from(e.combos)..insert(idx + 1, copy);
+              }
+            }
+          }
+        }
+        return c;
+      }).toList(),
+    );
+    _scheduleSave();
+  }
+
+  /// Reorder combos within an entry.
+  void reorderCombos(
+      String characterId, String entryId, int oldIndex, int newIndex) {
+    state = AppData(
+      characters: state.characters.map((c) {
+        if (c.id == characterId) {
+          for (final e in c.entries) {
+            if (e.id == entryId) {
+              final combos = List<Combo>.from(e.combos);
+              if (oldIndex < newIndex) newIndex -= 1;
+              final combo = combos.removeAt(oldIndex);
+              combos.insert(newIndex, combo);
+              e.combos = combos;
+            }
+          }
+        }
+        return c;
+      }).toList(),
+    );
+    _scheduleSave();
+  }
+
+  /// Deep-clone a MoveStep so duplicated combos don't share mutable lists.
+  static MoveStep _cloneStep(MoveStep step) {
+    if (step is MoveStepDirection) {
+      return MoveStepDirection(step.direction);
+    } else if (step is MoveStepAttack) {
+      return MoveStepAttack(step.attack);
+    } else if (step is MoveStepTemplate) {
+      return MoveStepTemplate(
+        templateId: step.templateId,
+        templateName: step.templateName,
+        templateSteps:
+            step.templateSteps.map((s) => _cloneStep(s)).toList(),
+      );
+    }
+    return step;
   }
 
   void updateComboNotation(
@@ -338,6 +422,52 @@ class AppDataNotifier extends StateNotifier<AppData> {
         if (c.id == characterId) {
           for (final t in c.templates) {
             if (t.id == templateId) t.name = newName;
+          }
+        }
+        return c;
+      }).toList(),
+    );
+    _scheduleSave();
+  }
+
+  void updateTemplateNotes(
+      String characterId, String templateId, String notes) {
+    state = AppData(
+      characters: state.characters.map((c) {
+        if (c.id == characterId) {
+          for (final t in c.templates) {
+            if (t.id == templateId) t.notes = notes;
+          }
+        }
+        return c;
+      }).toList(),
+    );
+    _scheduleSave();
+  }
+
+  void setTemplateUseNameInPdf(
+      String characterId, String templateId, bool value) {
+    state = AppData(
+      characters: state.characters.map((c) {
+        if (c.id == characterId) {
+          for (final t in c.templates) {
+            if (t.id == templateId) t.useNameInPdf = value;
+          }
+        }
+        return c;
+      }).toList(),
+    );
+    _scheduleSave();
+  }
+
+  /// Set template color (ARGB int). null resets to default black.
+  void setTemplateColor(
+      String characterId, String templateId, int? colorValue) {
+    state = AppData(
+      characters: state.characters.map((c) {
+        if (c.id == characterId) {
+          for (final t in c.templates) {
+            if (t.id == templateId) t.colorValue = colorValue;
           }
         }
         return c;

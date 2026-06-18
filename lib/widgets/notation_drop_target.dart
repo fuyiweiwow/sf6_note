@@ -49,7 +49,7 @@ class NotationDropTarget extends StatelessWidget {
             child: notation.isEmpty
                 ? Center(
                     child: Text(
-                      '将方向或拳脚拖拽到此处\n点击步骤可删除',
+                      '将方向或拳脚拖拽到此处\n点击步骤可选中，拖出可删除',
                       style: TextStyle(
                         color: Colors.grey.shade500,
                         fontSize: 14,
