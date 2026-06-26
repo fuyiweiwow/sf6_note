@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/app_data.dart';
+import '../models/character.dart';
 import '../models/move_step.dart';
+import '../models/move_template.dart';
 import '../providers/app_data_provider.dart';
 import '../widgets/direction_button.dart';
 import '../widgets/attack_button.dart';
 import '../widgets/notation_drop_target.dart';
 
 /// Dedicated screen for editing a single move template.
+///
+/// [characterId] locates the template:
+///   * non-null → a per-character template
+///   * null     → a global template visible to ALL characters
+/// The "visible to all characters" switch moves the template between these
+/// two locations (see [AppDataNotifier.relocateTemplate]).
 class TemplateEditorScreen extends ConsumerStatefulWidget {
   const TemplateEditorScreen({
     super.key,
@@ -15,7 +24,8 @@ class TemplateEditorScreen extends ConsumerStatefulWidget {
     required this.templateId,
   });
 
-  final String characterId;
+  /// Owning character id; null = global template.
+  final String? characterId;
   final String templateId;
 
   @override
@@ -31,14 +41,22 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
   // Narrow-screen bottom panel: which pad is expanded (null = only tab row).
   int? _activePad;
 
-  void _syncFromState() {
-    final data = ref.read(appDataProvider);
-    final charIdx = data.characters.indexWhere((c) => c.id == widget.characterId);
-    if (charIdx < 0) return;
-    final tmplIdx = data.characters[charIdx].templates.indexWhere((t) => t.id == widget.templateId);
-    if (tmplIdx < 0) return;
-    final tmpl = data.characters[charIdx].templates[tmplIdx];
+  /// Look up the live template + its owner character in current state.
+  /// Returns (template, ownerCharacterOrNull). owner is null for global
+  /// templates or when the template / character no longer exists.
+  ({MoveTemplate? template, Character? owner}) _locate(AppData data) {
+    for (final c in data.characters) {
+      for (final t in c.templates) {
+        if (t.id == widget.templateId) return (template: t, owner: c);
+      }
+    }
+    for (final t in data.globalTemplates) {
+      if (t.id == widget.templateId) return (template: t, owner: null);
+    }
+    return (template: null, owner: null);
+  }
 
+  void _syncFromState(MoveTemplate tmpl) {
     final nameChanged = _nameController == null || _nameController!.text != tmpl.name;
     _steps = List.from(tmpl.steps);
     _nameController ??= TextEditingController(text: tmpl.name)
@@ -107,20 +125,26 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
           widget.characterId, widget.templateId, []);
   }
 
+  void _deleteTemplate() {
+    ref.read(appDataProvider.notifier)
+        .removeTemplate(widget.characterId, widget.templateId);
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(appDataProvider);
-    final charIdx = data.characters.indexWhere((c) => c.id == widget.characterId);
-    if (charIdx < 0) {
-      return Scaffold(appBar: AppBar(title: const Text('编辑模板')), body: Center(child: Text('人物不存在')));
-    }
-    final tmplIdx = data.characters[charIdx].templates.indexWhere((t) => t.id == widget.templateId);
-    if (tmplIdx < 0) {
-      return Scaffold(appBar: AppBar(title: const Text('编辑模板')), body: Center(child: Text('模板不存在')));
+    final loc = _locate(data);
+    if (loc.template == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('编辑模板')),
+        body: const Center(child: Text('模板不存在')),
+      );
     }
 
-    _syncFromState();
-    final tmpl = data.characters[charIdx].templates[tmplIdx];
+    final tmpl = loc.template!;
+    final isGlobal = loc.owner == null;
+    _syncFromState(tmpl);
 
     return Scaffold(
       appBar: AppBar(
@@ -134,11 +158,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
           IconButton(
             icon: const Icon(Icons.delete_forever),
             tooltip: '删除模板',
-            onPressed: () {
-              ref.read(appDataProvider.notifier).removeTemplate(
-                    widget.characterId, widget.templateId);
-              Navigator.pop(context);
-            },
+            onPressed: _deleteTemplate,
           ),
         ],
       ),
@@ -151,6 +171,10 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Scope banner: shows where the template lives + the toggle
+                  // to move it between this character and the global pool.
+                  _buildScopeBanner(loc.owner),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _nameController,
                     decoration: InputDecoration(
@@ -264,6 +288,112 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
         ],
       ),
     );
+  }
+
+  /// Banner explaining the template's scope, with a switch to relocate it.
+  /// For a global template we need a destination character to move it *into*;
+  /// the user picks one from a dialog. Per-character templates just need a
+  /// boolean flip.
+  Widget _buildScopeBanner(Character? owner) {
+    final isGlobal = owner == null;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isGlobal ? Colors.blue.shade50 : Colors.purple.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isGlobal ? Colors.blue.shade200 : Colors.purple.shade200,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(isGlobal ? Icons.public : Icons.person_outline,
+              size: 18, color: isGlobal ? Colors.blue.shade700 : Colors.purple.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              isGlobal
+                  ? '通用模板 · 对所有角色可见'
+                  : '「${owner!.name}」专属模板',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isGlobal ? Colors.blue.shade700 : Colors.purple.shade700,
+              ),
+            ),
+          ),
+          Text(
+            '对全角色可见',
+            style: TextStyle(
+              fontSize: 12,
+              color: isGlobal ? Colors.blue.shade700 : Colors.grey.shade600,
+            ),
+          ),
+          Switch(
+            value: isGlobal,
+            onChanged: (value) => _onToggleScope(owner, value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onToggleScope(Character? owner, bool makeGlobal) async {
+    final notifier = ref.read(appDataProvider.notifier);
+    if (makeGlobal) {
+      // per-character → global. Relocate then re-open the editor under the
+      // new (null) scope so widget.characterId stays in sync with the
+      // template's owner (otherwise later edits would write to the wrong list).
+      notifier.relocateTemplate(owner!.id, null, widget.templateId);
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => TemplateEditorScreen(
+              characterId: null,
+              templateId: widget.templateId,
+            ),
+          ),
+        );
+      }
+    } else {
+      // global → need to pick a destination character
+      final data = ref.read(appDataProvider);
+      if (data.characters.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('还没有人物，无法把模板转为专属')),
+          );
+        }
+        return;
+      }
+      final destId = await showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('转为哪个角色的专属模板？'),
+          children: data.characters
+              .map((c) => SimpleDialogOption(
+                    onPressed: () => Navigator.pop(ctx, c.id),
+                    child: Text(c.name),
+                  ))
+              .toList(),
+        ),
+      );
+      if (destId == null) return;
+      notifier.relocateTemplate(null, destId, widget.templateId);
+      // Navigate into the relocated template under its new owner so the screen
+      // state (characterId) stays consistent.
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => TemplateEditorScreen(
+              characterId: destId,
+              templateId: widget.templateId,
+            ),
+          ),
+        );
+      }
+    }
   }
 
   static const List<Color> _palette = [

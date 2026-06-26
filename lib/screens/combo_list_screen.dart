@@ -85,6 +85,9 @@ class _ComboListScreenState extends ConsumerState<ComboListScreen> {
       return Scaffold(appBar: AppBar(title: const Text('条目')), body: Center(child: Text('条目不存在')));
     }
     final entry = character.entries[entryIdx];
+    // Templates a combo can reference: globals + this character's own.
+    final effectiveTemplates =
+        ref.read(appDataProvider.notifier).effectiveTemplates(widget.characterId);
 
     return Scaffold(
       appBar: AppBar(
@@ -156,7 +159,7 @@ class _ComboListScreenState extends ConsumerState<ComboListScreen> {
                   combo: combo,
                   index: index,
                   displayMode: _displayMode,
-                  templates: character.templates,
+                  templates: effectiveTemplates,
                   onTap: () {
                     Navigator.push(
                       context,

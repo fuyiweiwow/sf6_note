@@ -32,6 +32,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
   void setPdfExportMode(PdfNotationMode mode) {
     state = AppData(
       pdfExportMode: mode,
+      globalTemplates: state.globalTemplates,
       characters: state.characters,
     );
     _scheduleSave();
@@ -54,6 +55,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
   void addCharacter(String name) {
     state = AppData(
       characters: [...state.characters, Character(name: name)],
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -63,6 +65,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
       characters: state.characters
           .where((c) => c.id != characterId)
           .toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -73,6 +76,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         if (c.id == characterId) c.name = newName;
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -89,6 +93,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -101,6 +106,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -119,6 +125,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -137,6 +144,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -155,6 +163,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -171,6 +180,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -198,6 +208,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -220,6 +231,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -258,6 +270,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -279,6 +292,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -300,6 +314,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -321,6 +336,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -342,6 +358,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -367,6 +384,7 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
@@ -388,23 +406,53 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: state.globalTemplates,
     );
     _scheduleSave();
   }
 
   // --- Template operations ---
+  //
+  // Templates live in two places:
+  //   * per-character (characterId != null): only that character sees them
+  //   * global (characterId == null): visible to every character
+  // All template ops take a nullable characterId to target either location.
+  // `effectiveTemplates` merges the two lists for a given character.
 
-  void addTemplate(String characterId, MoveTemplate template) {
+  /// All templates a character can use: globals first, then its own.
+  List<MoveTemplate> effectiveTemplates(String characterId) {
+    final own = _findCharacter(characterId)?.templates ?? const [];
+    return [...state.globalTemplates, ...own];
+  }
+
+  Character? _findCharacter(String characterId) {
+    for (final c in state.characters) {
+      if (c.id == characterId) return c;
+    }
+    return null;
+  }
+
+  /// Read the list that owns this template (mutable, in current state).
+  /// characterId == null targets the global list.
+  List<MoveTemplate> _templateList(String? characterId) {
+    if (characterId == null) return state.globalTemplates;
+    return _findCharacter(characterId)?.templates ?? const [];
+  }
+
+  void addTemplate(String? characterId, MoveTemplate template) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) c.templates.add(template);
         return c;
       }).toList(),
+      globalTemplates: characterId == null
+          ? [...state.globalTemplates, template]
+          : state.globalTemplates,
     );
     _scheduleSave();
   }
 
-  void removeTemplate(String characterId, String templateId) {
+  void removeTemplate(String? characterId, String templateId) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -412,11 +460,14 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: characterId == null
+          ? state.globalTemplates.where((t) => t.id != templateId).toList()
+          : state.globalTemplates,
     );
     _scheduleSave();
   }
 
-  void renameTemplate(String characterId, String templateId, String newName) {
+  void renameTemplate(String? characterId, String templateId, String newName) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -426,12 +477,15 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: _mutateGlobal(characterId, (t) {
+        if (t.id == templateId) t.name = newName;
+      }),
     );
     _scheduleSave();
   }
 
   void updateTemplateNotes(
-      String characterId, String templateId, String notes) {
+      String? characterId, String templateId, String notes) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -441,12 +495,15 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: _mutateGlobal(characterId, (t) {
+        if (t.id == templateId) t.notes = notes;
+      }),
     );
     _scheduleSave();
   }
 
   void setTemplateUseNameInPdf(
-      String characterId, String templateId, bool value) {
+      String? characterId, String templateId, bool value) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -456,13 +513,16 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: _mutateGlobal(characterId, (t) {
+        if (t.id == templateId) t.useNameInPdf = value;
+      }),
     );
     _scheduleSave();
   }
 
   /// Set template color (ARGB int). null resets to default black.
   void setTemplateColor(
-      String characterId, String templateId, int? colorValue) {
+      String? characterId, String templateId, int? colorValue) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -472,12 +532,15 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: _mutateGlobal(characterId, (t) {
+        if (t.id == templateId) t.colorValue = colorValue;
+      }),
     );
     _scheduleSave();
   }
 
   void updateTemplateSteps(
-      String characterId, String templateId, List<MoveStep> steps) {
+      String? characterId, String templateId, List<MoveStep> steps) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -487,12 +550,15 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: _mutateGlobal(characterId, (t) {
+        if (t.id == templateId) t.steps = steps;
+      }),
     );
     _scheduleSave();
   }
 
   void appendTemplateStep(
-      String characterId, String templateId, MoveStep step) {
+      String? characterId, String templateId, MoveStep step) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -504,12 +570,17 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: _mutateGlobal(characterId, (t) {
+        if (t.id == templateId) {
+          t.steps = [...t.steps, step];
+        }
+      }),
     );
     _scheduleSave();
   }
 
   void removeTemplateStep(
-      String characterId, String templateId, int index) {
+      String? characterId, String templateId, int index) {
     state = AppData(
       characters: state.characters.map((c) {
         if (c.id == characterId) {
@@ -521,8 +592,68 @@ class AppDataNotifier extends StateNotifier<AppData> {
         }
         return c;
       }).toList(),
+      globalTemplates: _mutateGlobal(characterId, (t) {
+        if (t.id == templateId) {
+          t.steps = List.from(t.steps)..removeAt(index);
+        }
+      }),
     );
     _scheduleSave();
+  }
+
+  /// Move a template between the global pool and a character (or vice versa).
+  /// `toCharacterId == null` means "make it global / visible to all".
+  /// `fromCharacterId == null` means it currently lives in the global pool.
+  void relocateTemplate(
+      String? fromCharacterId, String? toCharacterId, String templateId) {
+    if (fromCharacterId == toCharacterId) return;
+    final list = _templateList(fromCharacterId);
+    final idx = list.indexWhere((t) => t.id == templateId);
+    if (idx < 0) return;
+    final template = list[idx];
+
+    if (fromCharacterId == null) {
+      // global -> character: remove from globals
+      final globals = state.globalTemplates.where((t) => t.id != templateId).toList();
+      state = AppData(
+        characters: state.characters.map((c) {
+          if (c.id == toCharacterId) c.templates.add(template);
+          return c;
+        }).toList(),
+        globalTemplates: globals,
+      );
+    } else {
+      // character -> (global or another character)
+      final chars = state.characters.map((c) {
+        if (c.id == fromCharacterId) {
+          c.templates = c.templates.where((t) => t.id != templateId).toList();
+        }
+        if (c.id == toCharacterId) {
+          c.templates.add(template);
+        }
+        return c;
+      }).toList();
+      final globals = toCharacterId == null
+          ? [...state.globalTemplates, template]
+          : state.globalTemplates;
+      state = AppData(
+        characters: chars,
+        globalTemplates: globals,
+      );
+    }
+    _scheduleSave();
+  }
+
+  /// Helper: rebuild the global list applying [mutator]. No-op when the
+  /// template lives on a character (characterId != null).
+  List<MoveTemplate> _mutateGlobal(
+      String? characterId, void Function(MoveTemplate) mutator) {
+    if (characterId != null) return state.globalTemplates;
+    final copy = state.globalTemplates.map((t) {
+      mutator(t);
+      return t;
+    }).toList();
+    return copy;
   }
 
   /// Save a selection of steps from a combo as a new template.
@@ -573,6 +704,82 @@ class AppDataNotifier extends StateNotifier<AppData> {
     state = data;
     await _fileIo.saveLocal(state);
     return true;
+  }
+
+  /// Merge [incoming] into the current data instead of replacing it.
+  /// Dedupes by id at every level (character → entry → combo; global +
+  /// per-character templates), preserving existing items and only adding the
+  /// ones that are missing.
+  Future<bool> mergeImportData() async {
+    final incoming = await _fileIo.importFromFile();
+    if (incoming == null) return false;
+    state = _merge(state, incoming);
+    await _fileIo.saveLocal(state);
+    return true;
+  }
+
+  static AppData _merge(AppData local, AppData incoming) {
+    // --- Characters: key by id, merge entries + per-character templates ---
+    final charById = <String, Character>{
+      for (final c in local.characters) c.id: c,
+    };
+    for (final inc in incoming.characters) {
+      final existing = charById[inc.id];
+      if (existing == null) {
+        charById[inc.id] = inc;
+      } else {
+        existing.entries = _mergeEntries(existing.entries, inc.entries);
+        // Per-character templates must be merged too (dedupe by id), otherwise
+        // newly-added character templates on the incoming side get lost.
+        existing.templates =
+            _mergeTemplates(existing.templates, inc.templates);
+      }
+    }
+
+    // --- Global templates: dedupe by id ---
+    final globals = _mergeTemplates(local.globalTemplates, incoming.globalTemplates);
+
+    return AppData(
+      characters: charById.values.toList(),
+      globalTemplates: globals,
+      pdfExportMode: local.pdfExportMode,
+    );
+  }
+
+  /// Merge two template lists by id: keep all of [local], then add any from
+  /// [incoming] whose id isn't already present.
+  static List<MoveTemplate> _mergeTemplates(
+      List<MoveTemplate> local, List<MoveTemplate> incoming) {
+    final seen = <String>{};
+    final out = <MoveTemplate>[];
+    for (final t in local) {
+      if (seen.add(t.id)) out.add(t);
+    }
+    for (final t in incoming) {
+      if (seen.add(t.id)) out.add(t);
+    }
+    return out;
+  }
+
+  static List<Entry> _mergeEntries(List<Entry> local, List<Entry> incoming) {
+    final byId = <String, Entry>{for (final e in local) e.id: e};
+    for (final inc in incoming) {
+      final existing = byId[inc.id];
+      if (existing == null) {
+        byId[inc.id] = inc;
+      } else {
+        existing.combos = _mergeCombos(existing.combos, inc.combos);
+      }
+    }
+    return byId.values.toList();
+  }
+
+  static List<Combo> _mergeCombos(List<Combo> local, List<Combo> incoming) {
+    final byId = <String, Combo>{for (final c in local) c.id: c};
+    for (final inc in incoming) {
+      byId.putIfAbsent(inc.id, () => inc);
+    }
+    return byId.values.toList();
   }
 
   Future<bool> exportData() async {

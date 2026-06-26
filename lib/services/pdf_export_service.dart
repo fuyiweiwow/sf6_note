@@ -8,16 +8,26 @@ import 'package:pdf/widgets.dart' as pw;
 import '../models/character.dart';
 import '../models/entry.dart';
 import '../models/move_step.dart';
+import '../models/move_template.dart';
 
 enum PdfNotationMode { direction, numpad, mixed }
 
 class PdfExportService {
+  /// Export a character's combos to PDF. [templates] should be the character's
+  /// *effective* template list (globals + its own) so color/name lookups resolve
+  /// for both global and per-character templates.
   Future<void> exportCharacter(
     Character character,
-    PdfNotationMode mode,
-  ) async {
+    PdfNotationMode mode, {
+    List<MoveTemplate>? templates,
+  }) async {
     final font = await _loadChineseFont();
-    final bytes = await _buildCharacterPdf(character, font, mode);
+    final bytes = await _buildCharacterPdf(
+      character,
+      font,
+      mode,
+      templates ?? character.templates,
+    );
     final suffix = switch (mode) {
       PdfNotationMode.direction => 'direction',
       PdfNotationMode.numpad => 'numpad',
@@ -30,6 +40,7 @@ class PdfExportService {
     Character character,
     pw.Font font,
     PdfNotationMode mode,
+    List templates,
   ) async {
     final pdf = pw.Document(theme: pw.ThemeData.withFont(base: font));
     final theme = pw.ThemeData.withFont(base: font);
@@ -42,7 +53,7 @@ class PdfExportService {
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(40),
           theme: theme,
-          build: (context) => _buildEntrySection(entry, character, font, mode),
+          build: (context) => _buildEntrySection(entry, templates, font, mode),
         ),
       );
     }
@@ -77,12 +88,11 @@ class PdfExportService {
     return pw.Font.helvetica();
   }
 
-  /// Render one combo's notation as colored [pw.InlineSpan] list.
-  /// A single notation mode returns one line; mixed mode returns two lines
-  /// joined by a newline (the caller splits these into separate widgets).
+  /// Render one entry's combos. [templates] is the effective template list
+  /// (globals + the character's own) used for color/name lookups.
   List<pw.Widget> _buildEntrySection(
     Entry entry,
-    Character character,
+    List templates,
     pw.Font font,
     PdfNotationMode mode,
   ) {
@@ -147,14 +157,14 @@ class PdfExportService {
         if (combo.notation.isNotEmpty) {
           if (mode == PdfNotationMode.mixed) {
             comboBlock.add(_notationLine(
-              buildColoredNotation(combo.notation, character.templates, useNumpad: false),
+              buildColoredNotation(combo.notation, templates, useNumpad: false),
               combo.name.isNotEmpty,
               combo.name.isEmpty ? '${i + 1}. ' : null,
               font,
             ));
             comboBlock.add(pw.SizedBox(height: 10));
             comboBlock.add(_notationLine(
-              buildColoredNotation(combo.notation, character.templates, useNumpad: true),
+              buildColoredNotation(combo.notation, templates, useNumpad: true),
               combo.name.isNotEmpty,
               null,
               font,
@@ -162,7 +172,7 @@ class PdfExportService {
           } else {
             final colored = buildColoredNotation(
               combo.notation,
-              character.templates,
+              templates,
               useNumpad: mode == PdfNotationMode.numpad,
             );
             comboBlock.add(_notationLine(

@@ -55,12 +55,18 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
     return combo != null && (combo as dynamic).locked == true;
   }
 
-  /// Get the character's templates from current state.
+  /// Get the templates available to this character: globals + its own.
   List<MoveTemplate> _getTemplates(AppData data) {
-    for (final c in data.characters) {
-      if (c.id == widget.characterId) return c.templates;
-    }
-    return [];
+    final notifier = ref.read(appDataProvider.notifier);
+    return notifier.effectiveTemplates(widget.characterId);
+  }
+
+  /// Resolve which scope owns [t] so deletes target the right list.
+  /// Returns the owning character id, or null if it's a global template.
+  String? _ownerOf(MoveTemplate t) {
+    final data = ref.read(appDataProvider);
+    if (data.globalTemplates.any((g) => g.id == t.id)) return null;
+    return widget.characterId;
   }
 
   /// Sync the notes controller without triggering a loop.
@@ -480,6 +486,13 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
   }
 
   Widget _buildTemplateBar(List<MoveTemplate> templates, {bool expand = false}) {
+    // Split into global (visible to all) vs this character's own. Each group
+    // is rendered as a labeled block so the user can tell them apart at a
+    // glance and drag per-character templates into the global pool.
+    final data = ref.read(appDataProvider);
+    final globals = templates.where((t) => data.globalTemplates.any((g) => g.id == t.id)).toList();
+    final owns = templates.where((t) => !data.globalTemplates.any((g) => g.id == t.id)).toList();
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: expand ? CrossAxisAlignment.center : CrossAxisAlignment.start,
@@ -489,27 +502,123 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
         if (!expand) const SizedBox(height: 4),
         if (templates.isEmpty)
           Center(child: Text(expand ? '还没有模板，先在招式编辑器里选区保存' : '选区后保存为模板', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)))
-        else
-          Wrap(
-            alignment: expand ? WrapAlignment.center : WrapAlignment.start,
-            spacing: 6, runSpacing: 6,
-            children: templates.map((t) => TemplateChip(
-              template: t,
-              onLongPress: () {
-                showDialog(context: context, builder: (ctx) => AlertDialog(
-                  title: Text('删除模板「${t.displayText}」？'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                    TextButton(onPressed: () {
-                      ref.read(appDataProvider.notifier).removeTemplate(widget.characterId, t.id);
-                      Navigator.pop(ctx);
-                    }, child: const Text('删除', style: TextStyle(color: Colors.red))),
-                  ],
-                ));
-              },
-            )).toList(),
-          ),
+        else ...[
+          // Global block (drag into notation to use; these can't be relocated
+          // from here since they already belong to everyone).
+          if (globals.isNotEmpty)
+            _templateBlock(
+              label: '通用',
+              iconColor: Colors.blue.shade700,
+              templates: globals,
+              expand: expand,
+              canMoveToGlobal: false,
+            ),
+          if (globals.isNotEmpty && owns.isNotEmpty)
+            SizedBox(height: expand ? 6 : 4),
+          // Per-character block (drag into notation to use; long-press the chip
+          // to delete, or tap the globe badge to move it into the global pool).
+          if (owns.isNotEmpty)
+            _templateBlock(
+              label: '本角色',
+              iconColor: Colors.purple.shade700,
+              templates: owns,
+              expand: expand,
+              canMoveToGlobal: true,
+            ),
+        ],
       ],
     );
+  }
+
+  /// One labeled group of template chips.
+  Widget _templateBlock({
+    required String label,
+    required Color iconColor,
+    required List<MoveTemplate> templates,
+    required bool expand,
+    required bool canMoveToGlobal,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: expand ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(canMoveToGlobal ? Icons.person_outline : Icons.public,
+                size: 12, color: iconColor),
+            const SizedBox(width: 3),
+            Text(label,
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: iconColor)),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Wrap(
+          alignment: expand ? WrapAlignment.center : WrapAlignment.start,
+          spacing: 6,
+          runSpacing: 6,
+          children: templates.map((t) {
+            final ownerId = _ownerOf(t);
+            return TemplateChip(
+              template: t,
+              onLongPress: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text('删除模板「${t.displayText}」？'),
+                    content: Text(ownerId == null
+                        ? '这是通用模板，删除后所有角色都不再可见。'
+                        : '将删除该角色的此模板。'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                      TextButton(
+                        onPressed: () {
+                          ref.read(appDataProvider.notifier).removeTemplate(ownerId, t.id);
+                          Navigator.pop(ctx);
+                        },
+                        child: const Text('删除', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              // Per-character chip: a globe badge to promote it to global.
+              // Tap shows a confirm snackbar/action rather than a silent move.
+              // Sized up so it's tappable on phones.
+              badge: canMoveToGlobal
+                  ? GestureDetector(
+                      onTap: () => _moveToGlobal(t),
+                      behavior: HitTestBehavior.opaque,
+                      child: Tooltip(
+                        message: '转为通用模板',
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade100,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.public, size: 16, color: Colors.blue.shade700),
+                        ),
+                      ),
+                    )
+                  : null,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  /// Promote a per-character template into the global pool (visible to all).
+  void _moveToGlobal(MoveTemplate t) {
+    ref.read(appDataProvider.notifier).relocateTemplate(widget.characterId, null, t.id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('「${t.displayText}」已转为通用模板（对所有角色可见）'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }

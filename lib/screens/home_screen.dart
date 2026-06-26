@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_data_provider.dart';
 import 'character_screen.dart';
 import 'help_screen.dart';
+import 'template_library_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -51,16 +52,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<void> _importData() async {
-    final success = await ref.read(appDataProvider.notifier).importData();
+  Future<void> _importData({required bool merge}) async {
+    final notifier = ref.read(appDataProvider.notifier);
+    final success =
+        merge ? await notifier.mergeImportData() : await notifier.importData();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success ? '导入成功' : '导入失败'),
+          content: Text(success
+              ? (merge ? '合并导入成功' : '导入成功')
+              : (merge ? '合并导入失败' : '导入失败')),
           backgroundColor: success ? Colors.green : Colors.red,
         ),
       );
     }
+  }
+
+  /// Show a popup menu to choose import mode: replace or merge.
+  Future<void> _showImportMenu() async {
+    final choice = await showMenu<_ImportMode>(
+      context: context,
+      position: const RelativeRect.fromLTRB(1000, 80, 0, 0),
+      items: const [
+        PopupMenuItem(
+          value: _ImportMode.replace,
+          child: ListTile(
+            leading: Icon(Icons.upload_outlined),
+            title: Text('替换导入'),
+            subtitle: Text('用所选文件完全覆盖当前数据'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+        PopupMenuItem(
+          value: _ImportMode.merge,
+          child: ListTile(
+            leading: Icon(Icons.merge_type),
+            title: Text('合并导入'),
+            subtitle: Text('按 id 合并，仅新增缺失项，保留现有数据'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+      ],
+    );
+    if (choice == null) return;
+    await _importData(merge: choice == _ImportMode.merge);
   }
 
   Future<void> _exportData() async {
@@ -100,9 +137,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
           ),
           IconButton(
+            icon: const Icon(Icons.bookmark_outline),
+            tooltip: '通用招式模板',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const TemplateLibraryScreen(),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.upload_outlined),
             tooltip: '导入',
-            onPressed: _importData,
+            onPressed: _showImportMenu,
           ),
           IconButton(
             icon: const Icon(Icons.download_outlined),
@@ -190,3 +239,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
+
+enum _ImportMode { replace, merge }
+

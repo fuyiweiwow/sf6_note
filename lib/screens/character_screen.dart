@@ -3,10 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/entry.dart';
 import '../models/character.dart';
-import '../models/move_template.dart';
 import '../providers/app_data_provider.dart';
 import 'combo_list_screen.dart';
-import 'template_editor_screen.dart';
+import 'template_library_screen.dart';
 import '../services/pdf_export_service.dart';
 
 class CharacterScreen extends ConsumerStatefulWidget {
@@ -22,55 +21,6 @@ class CharacterScreen extends ConsumerStatefulWidget {
 }
 
 class _CharacterScreenState extends ConsumerState<CharacterScreen> {
-  Future<void> _showAddTemplateDialog() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('新建招式模板'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: '模板名称',
-            hintText: '例如: 波动拳',
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          TextButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(context, controller.text.trim());
-              }
-            },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name != null) {
-      final notifier = ref.read(appDataProvider.notifier);
-      final tmpl = MoveTemplate(name: name);
-      notifier.addTemplate(widget.characterId, tmpl);
-      final data = ref.read(appDataProvider);
-      final character = data.characters.firstWhere((c) => c.id == widget.characterId);
-      final newTmpl = character.templates.lastWhere((t) => t.name == name);
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TemplateEditorScreen(
-              characterId: widget.characterId,
-              templateId: newTmpl.id,
-            ),
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _showAddCustomEntryDialog() async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -133,7 +83,11 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
                   if (value != null) {
                     notifier.setPdfExportMode(value);
                     Navigator.pop(ctx);
-                    PdfExportService().exportCharacter(character, value);
+                    PdfExportService().exportCharacter(
+                      character,
+                      value,
+                      templates: notifier.effectiveTemplates(character.id),
+                    );
                   }
                 },
               );
@@ -172,7 +126,9 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
   Widget build(BuildContext context) {
     final data = ref.watch(appDataProvider);
     final character = data.characters.firstWhere((c) => c.id == widget.characterId);
-    final templates = character.templates;
+    // Templates available to this character = globals + its own.
+    final effectiveCount =
+        data.globalTemplates.length + character.templates.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -181,6 +137,21 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
         foregroundColor: Colors.grey.shade900,
         elevation: 0.5,
         actions: [
+          // Templates moved to a dedicated page so the entry list stays clean.
+          IconButton(
+            icon: const Icon(Icons.bookmark_outline),
+            tooltip: '招式模板 ($effectiveCount)',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TemplateLibraryScreen(
+                    characterId: widget.characterId,
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.picture_as_pdf),
             tooltip: '导出PDF',
@@ -196,107 +167,6 @@ class _CharacterScreenState extends ConsumerState<CharacterScreen> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          // Templates preview bar (always visible)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            color: Colors.purple.shade50,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text('招式模板 (${templates.length})',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.purple.shade700)),
-                    const Spacer(),
-                    SizedBox(
-                      height: 24,
-                      child: TextButton.icon(
-                        onPressed: () => _showAddTemplateDialog(),
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('新建', style: TextStyle(fontSize: 12)),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                if (templates.isEmpty)
-                  Text('暂无模板，点击新建或从连段编辑器保存选区',
-                      style: TextStyle(fontSize: 11, color: Colors.purple.shade400))
-                else
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: templates.map((t) {
-                      return GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => TemplateEditorScreen(
-                                characterId: widget.characterId,
-                                templateId: t.id,
-                              ),
-                            ),
-                          );
-                        },
-                        onLongPress: () {
-                          showDialog(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: Text('删除模板「${t.displayText}」？'),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                                TextButton(
-                                  onPressed: () {
-                                    ref.read(appDataProvider.notifier).removeTemplate(widget.characterId, t.id);
-                                    Navigator.pop(ctx);
-                                  },
-                                  child: const Text('删除', style: TextStyle(color: Colors.red)),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.purple.shade300),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                margin: const EdgeInsets.only(right: 5),
-                                decoration: BoxDecoration(
-                                  color: t.colorValue == null
-                                      ? Colors.black
-                                      : Color(t.colorValue!),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              Text(
-                                t.name.isNotEmpty ? t.name : t.stepsPreview,
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple.shade700),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
           // Entry list
           Expanded(
             child: ReorderableListView.builder(
