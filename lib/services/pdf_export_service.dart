@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -71,20 +72,43 @@ class PdfExportService {
     }
   }
 
+  /// Load a CJK-capable font for PDF rendering.
+  ///
+  /// Order of preference:
+  ///   1. The bundled `simhei.ttf` asset (works on every platform, including
+  ///      Android where no system CJK font path exists — this is what fixes
+  ///      the Android "garbled PDF" bug).
+  ///   2. A few Windows system font paths, as a fallback if the asset is ever
+  ///      missing from the bundle.
+  ///   3. Helvetica (no CJK glyphs — last resort, Chinese will show as boxes).
   Future<pw.Font> _loadChineseFont() async {
+    // 1. Bundled asset — the reliable cross-platform path.
+    try {
+      final data = await rootBundle.load('assets/fonts/simhei.ttf');
+      return pw.Font.ttf(data);
+    } catch (_) {
+      // Asset missing — fall through to system fonts.
+    }
+
+    // 2. Windows system fonts fallback.
     const paths = [
-      'C:/Windows/Fonts/msyh.ttf',
-      'C:/Windows/Fonts/msyhbd.ttf',
       'C:/Windows/Fonts/simhei.ttf',
+      'C:/Windows/Fonts/msyh.ttc',
       'C:/Windows/Fonts/simsun.ttc',
     ];
     for (final path in paths) {
-      final file = File(path);
-      if (file.existsSync()) {
-        final data = file.readAsBytesSync();
-        return pw.Font.ttf(ByteData.view(data.buffer));
+      try {
+        final file = File(path);
+        if (file.existsSync()) {
+          final data = file.readAsBytesSync();
+          return pw.Font.ttf(ByteData.view(data.buffer));
+        }
+      } catch (_) {
+        // try next path
       }
     }
+
+    // 3. Last resort.
     return pw.Font.helvetica();
   }
 

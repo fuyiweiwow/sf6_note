@@ -8,7 +8,8 @@ import '../providers/app_data_provider.dart';
 import '../widgets/direction_button.dart';
 import '../widgets/attack_button.dart';
 import '../widgets/notation_drop_target.dart';
-import '../widgets/template_chip.dart';
+import '../widgets/template_picker_panel.dart';
+import 'template_editor_screen.dart';
 
 class ComboEditorScreen extends ConsumerStatefulWidget {
   const ComboEditorScreen({
@@ -59,14 +60,6 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
   List<MoveTemplate> _getTemplates(AppData data) {
     final notifier = ref.read(appDataProvider.notifier);
     return notifier.effectiveTemplates(widget.characterId);
-  }
-
-  /// Resolve which scope owns [t] so deletes target the right list.
-  /// Returns the owning character id, or null if it's a global template.
-  String? _ownerOf(MoveTemplate t) {
-    final data = ref.read(appDataProvider);
-    if (data.globalTemplates.any((g) => g.id == t.id)) return null;
-    return widget.characterId;
   }
 
   /// Sync the notes controller without triggering a loop.
@@ -377,7 +370,9 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
                         _divider(),
                         Expanded(child: _buildAttackPad()),
                         _divider(),
-                        Expanded(flex: 2, child: _buildTemplateBar(templates)),
+                        Expanded(
+                            flex: 2,
+                            child: _buildTemplatePanel(templates)),
                       ],
                     );
                   }
@@ -414,7 +409,7 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
             child: switch (_activePad) {
               0 => Center(child: _buildDirectionPad()),
               1 => Center(child: _buildAttackPad()),
-              _ => _buildTemplateBar(templates, expand: true),
+              _ => _buildTemplatePanel(templates, expand: true),
             },
           ),
       ],
@@ -485,140 +480,46 @@ class _ComboEditorScreenState extends ConsumerState<ComboEditorScreen> {
     );
   }
 
-  Widget _buildTemplateBar(List<MoveTemplate> templates, {bool expand = false}) {
-    // Split into global (visible to all) vs this character's own. Each group
-    // is rendered as a labeled block so the user can tell them apart at a
-    // glance and drag per-character templates into the global pool.
-    final data = ref.read(appDataProvider);
-    final globals = templates.where((t) => data.globalTemplates.any((g) => g.id == t.id)).toList();
-    final owns = templates.where((t) => !data.globalTemplates.any((g) => g.id == t.id)).toList();
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: expand ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-      children: [
-        if (!expand)
-          Text('模板', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
-        if (!expand) const SizedBox(height: 4),
-        if (templates.isEmpty)
-          Center(child: Text(expand ? '还没有模板，先在招式编辑器里选区保存' : '选区后保存为模板', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)))
-        else ...[
-          // Global block (drag into notation to use; these can't be relocated
-          // from here since they already belong to everyone).
-          if (globals.isNotEmpty)
-            _templateBlock(
-              label: '通用',
-              iconColor: Colors.blue.shade700,
-              templates: globals,
-              expand: expand,
-              canMoveToGlobal: false,
+  /// Template picker: collapsible 通用/本角色 groups with per-group paging,
+  /// so a long template list never eats the editing area. State (collapse,
+  /// page) lives inside the panel widget.
+  Widget _buildTemplatePanel(List<MoveTemplate> templates, {bool expand = false}) {
+    return TemplatePickerPanel(
+      appData: ref.read(appDataProvider),
+      characterId: widget.characterId,
+      compact: !expand,
+      onDeleteTemplate: (ownerId, t) {
+        ref.read(appDataProvider.notifier).removeTemplate(ownerId, t.id);
+      },
+      onMoveToGlobal: (t) {
+        ref.read(appDataProvider.notifier)
+            .relocateTemplate(widget.characterId, null, t.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('「${t.displayText}」已转为通用模板（对所有角色可见）'),
+              duration: const Duration(seconds: 2),
             ),
-          if (globals.isNotEmpty && owns.isNotEmpty)
-            SizedBox(height: expand ? 6 : 4),
-          // Per-character block (drag into notation to use; long-press the chip
-          // to delete, or tap the globe badge to move it into the global pool).
-          if (owns.isNotEmpty)
-            _templateBlock(
-              label: '本角色',
-              iconColor: Colors.purple.shade700,
-              templates: owns,
-              expand: expand,
-              canMoveToGlobal: true,
+          );
+        }
+      },
+      // Create a template without leaving the combo editor: add it then push
+      // the template editor on top. Returning from it lands back here, so the
+      // in-progress combo isn't lost.
+      onCreateTemplate: (ownerId, name) {
+        final notifier = ref.read(appDataProvider.notifier);
+        final tmpl = MoveTemplate(name: name);
+        notifier.addTemplate(ownerId, tmpl);
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TemplateEditorScreen(
+              characterId: ownerId,
+              templateId: tmpl.id,
             ),
-        ],
-      ],
+          ),
+        );
+      },
     );
-  }
-
-  /// One labeled group of template chips.
-  Widget _templateBlock({
-    required String label,
-    required Color iconColor,
-    required List<MoveTemplate> templates,
-    required bool expand,
-    required bool canMoveToGlobal,
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: expand ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(canMoveToGlobal ? Icons.person_outline : Icons.public,
-                size: 12, color: iconColor),
-            const SizedBox(width: 3),
-            Text(label,
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: iconColor)),
-          ],
-        ),
-        const SizedBox(height: 3),
-        Wrap(
-          alignment: expand ? WrapAlignment.center : WrapAlignment.start,
-          spacing: 6,
-          runSpacing: 6,
-          children: templates.map((t) {
-            final ownerId = _ownerOf(t);
-            return TemplateChip(
-              template: t,
-              onLongPress: () {
-                showDialog(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text('删除模板「${t.displayText}」？'),
-                    content: Text(ownerId == null
-                        ? '这是通用模板，删除后所有角色都不再可见。'
-                        : '将删除该角色的此模板。'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                      TextButton(
-                        onPressed: () {
-                          ref.read(appDataProvider.notifier).removeTemplate(ownerId, t.id);
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('删除', style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              // Per-character chip: a globe badge to promote it to global.
-              // Tap shows a confirm snackbar/action rather than a silent move.
-              // Sized up so it's tappable on phones.
-              badge: canMoveToGlobal
-                  ? GestureDetector(
-                      onTap: () => _moveToGlobal(t),
-                      behavior: HitTestBehavior.opaque,
-                      child: Tooltip(
-                        message: '转为通用模板',
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade100,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.public, size: 16, color: Colors.blue.shade700),
-                        ),
-                      ),
-                    )
-                  : null,
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  /// Promote a per-character template into the global pool (visible to all).
-  void _moveToGlobal(MoveTemplate t) {
-    ref.read(appDataProvider.notifier).relocateTemplate(widget.characterId, null, t.id);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('「${t.displayText}」已转为通用模板（对所有角色可见）'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
   }
 }
